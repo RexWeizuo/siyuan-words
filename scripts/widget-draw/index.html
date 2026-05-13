@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  :root { --bg: #1e1e1e; --surface: #2d2d2d; --text: #ccc; --border: #444; --accent: #3574f0; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, sans-serif;
+    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+  }
+  #toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  #toolbar button {
+    background: transparent; border: 1px solid var(--border); color: var(--text);
+    padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
+    white-space: nowrap;
+  }
+  #toolbar button.active { background: var(--accent); border-color: var(--accent); }
+  #toolbar button:hover { opacity: 0.8; }
+  #toolbar input[type="color"] {
+    width: 28px; height: 28px; border: 1px solid var(--border);
+    border-radius: 4px; cursor: pointer; background: transparent; padding: 2px;
+  }
+  #toolbar input[type="range"] { width: 60px; cursor: pointer; }
+  #toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  #toolbar .hint { font-size: 11px; color: #888; margin-left: auto; }
+  #canvas-wrap { flex: 1; position: relative; overflow: hidden; cursor: crosshair; }
+  canvas { position: absolute; top: 0; left: 0; touch-action: none; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button id="btn-pen" class="active">笔</button>
+  <button id="btn-eraser">橡皮</button>
+  <span class="sep"></span>
+  <input type="color" id="color" value="#ffffff">
+  <span style="font-size:12px">粗细</span>
+  <input type="range" id="size" min="0.5" max="20" value="2.5" step="0.5">
+  <span id="size-val" style="font-size:12px;min-width:24px">2.5</span>
+  <span class="sep"></span>
+  <button id="btn-undo">撤销</button>
+  <button id="btn-clear">清空</button>
+  <button id="btn-save">保存</button>
+  <span class="hint">笔触: <span id="pressure-hint">-</span></span>
+</div>
+
+<div id="canvas-wrap">
+  <canvas id="c"></canvas>
+</div>
+
+<script>
+const wrap = document.getElementById('canvas-wrap');
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+let tool = 'pen';
+let color = '#ffffff';
+let size = 2.5;
+
+// undo stack — each snapshot is an ImageData
+const undoStack = [];
+const MAX_UNDO = 50;
+
+// current stroke path (for smooth drawing)
+let drawing = false;
+let currentPath = [];
+
+function resize() {
+  const r = wrap.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = r.width, h = r.height;
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+  canvas.width = w * dpr;
+  canvas.height = h * dpr;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.scale(dpr, dpr);
+}
+resize();
+window.addEventListener('resize', resize);
+
+// snapshot before stroke
+function snapshot() {
+  if (undoStack.length >= MAX_UNDO) undoStack.shift();
+  undoStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const img = undoStack.pop();
+  ctx.putImageData(img, 0, 0);
+}
+
+function clearAll() {
+  snapshot();
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+// ---- pointer events (works with pen + pressure) ----
+function getPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top, pressure: e.pressure || 0.5 };
+}
+
+canvas.addEventListener('pointerdown', (e) => {
+  drawing = true;
+  const p = getPos(e);
+  document.getElementById('pressure-hint').textContent = p.pressure.toFixed(2);
+  snapshot();
+
+  if (tool === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.fillStyle = 'rgba(0,0,0,1)';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  } else {
+    currentPath = [p];
+    ctx.strokeStyle = color;
+    ctx.lineWidth = size * p.pressure * 2;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+  }
+});
+
+canvas.addEventListener('pointermove', (e) => {
+  if (!drawing) return;
+  const p = getPos(e);
+  document.getElementById('pressure-hint').textContent = p.pressure.toFixed(2);
+
+  if (tool === 'eraser') {
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, size * 2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+  } else {
+    currentPath.push(p);
+    // smooth curve through last few points
+    if (currentPath.length > 3) {
+      const len = currentPath.length;
+      const a = currentPath[len - 3];
+      const b = currentPath[len - 2];
+      const c = currentPath[len - 1];
+      const midAB = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const midBC = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2 };
+      const end = { x: (b.x + c.x) / 2, y: (b.y + c.y) / 2 };
+      const width = size * b.pressure * 2;
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.quadraticCurveTo(b.x, b.y, end.x, end.y);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(end.x, end.y);
+    } else {
+      ctx.lineTo(p.x, p.y);
+      ctx.lineWidth = size * p.pressure * 2;
+      ctx.stroke();
+    }
+  }
+});
+
+canvas.addEventListener('pointerup', () => {
+  if (!drawing) return;
+  drawing = false;
+  currentPath = [];
+  if (tool !== 'eraser') ctx.closePath();
+});
+
+canvas.addEventListener('pointerleave', () => { drawing = false; currentPath = []; });
+
+// ---- toolbar ----
+document.getElementById('btn-pen').addEventListener('click', function() {
+  tool = 'pen';
+  this.classList.add('active');
+  document.getElementById('btn-eraser').classList.remove('active');
+  canvas.style.cursor = 'crosshair';
+});
+document.getElementById('btn-eraser').addEventListener('click', function() {
+  tool = 'eraser';
+  this.classList.add('active');
+  document.getElementById('btn-pen').classList.remove('active');
+  canvas.style.cursor = 'cell';
+});
+document.getElementById('color').addEventListener('input', (e) => color = e.target.value);
+document.getElementById('size').addEventListener('input', (e) => {
+  size = parseFloat(e.target.value);
+  document.getElementById('size-val').textContent = size;
+});
+document.getElementById('btn-undo').addEventListener('click', undo);
+document.getElementById('btn-clear').addEventListener('click', clearAll);
+document.getElementById('btn-save').addEventListener('click', () => {
+  const link = document.createElement('a');
+  link.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+});
+
+// keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
+});
+</script>
+</body>
+</html>

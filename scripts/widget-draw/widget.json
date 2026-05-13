@@ -1,0 +1,13 @@
+{
+  "name": "draw",
+  "displayName": {
+    "en_US": "Whiteboard",
+    "zh_CN": "手写画板"
+  },
+  "description": {
+    "zh_CN": "Canvas 手写画板，支持压感，适合写题演算"
+  },
+  "version": "1.0.0",
+  "author": "RexWeizuo",
+  "keywords": ["draw", "whiteboard", "canvas", "画板", "手写"]
+}
