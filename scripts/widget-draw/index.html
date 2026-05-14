@@ -149,6 +149,99 @@ function drawInkStroke(pts, g) {
   }
 }
 
+// ---- shape detection ----
+function detectShape(pts) {
+  if (pts.length < 5) return null;
+
+  // down-sample to reduce computation
+  const step = Math.max(1, Math.floor(pts.length / 40));
+  const sampled = pts.filter((_, i) => i % step === 0);
+  if (sampled.length < 5) return null;
+
+  // --- line detection ---
+  const sx = sampled[0].x, sy = sampled[0].y;
+  const ex = sampled[sampled.length-1].x, ey = sampled[sampled.length-1].y;
+  const lineDist = Math.hypot(ex - sx, ey - sy);
+
+  if (lineDist > 30) { // only detect lines longer than 30px
+    // max perpendicular deviation from the straight line
+    let maxDev = 0;
+    const dx = ex - sx, dy = ey - sy;
+    const lenSq = dx*dx + dy*dy;
+    for (const pt of sampled) {
+      const t = ((pt.x - sx)*dx + (pt.y - sy)*dy) / lenSq;
+      const projX = sx + t*dx, projY = sy + t*dy;
+      const dev = Math.hypot(pt.x - projX, pt.y - projY);
+      if (dev > maxDev) maxDev = dev;
+    }
+    // path length vs straight-line ratio
+    let pathLen = 0;
+    for (let i = 1; i < sampled.length; i++) {
+      pathLen += Math.hypot(sampled[i].x - sampled[i-1].x, sampled[i].y - sampled[i-1].y);
+    }
+    // is a line if: deviation < 10% of length AND path/straight ratio < 1.3
+    if (maxDev < lineDist * 0.12 && pathLen / lineDist < 1.3) {
+      return { type: 'line', x1: sx, y1: sy, x2: ex, y2: ey };
+    }
+  }
+
+  // --- circle/ellipse detection ---
+  const n = sampled.length;
+  // center of bounding box
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  for (const pt of sampled) {
+    if (pt.x < minX) minX = pt.x; if (pt.y < minY) minY = pt.y;
+    if (pt.x > maxX) maxX = pt.x; if (pt.y > maxY) maxY = pt.y;
+  }
+  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+  const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
+  const avgR = (rx + ry) / 2;
+
+  if (avgR < 15) return null; // too small
+
+  // check if points are roughly circular
+  let maxRadDev = 0;
+  for (const pt of sampled) {
+    const dist = Math.hypot(pt.x - cx, pt.y - cy);
+    const dev = Math.abs(dist - avgR);
+    if (dev > maxRadDev) maxRadDev = dev;
+  }
+  // must be roughly closed (start near end)
+  const closureDist = Math.hypot(sampled[0].x - sampled[n-1].x, sampled[0].y - sampled[n-1].y);
+  const circumference = 2 * Math.PI * avgR;
+
+  if (maxRadDev < avgR * 0.3 && closureDist < avgR * 0.5 && n >= 8) {
+    return { type: 'circle', cx, cy, r: avgR };
+  }
+
+  return null;
+}
+
+function drawPerfectLine(x1, y1, x2, y2, g) {
+  const w = inkWidth(0.5); // moderate width
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineWidth = w;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.moveTo(x1, y1);
+  g.lineTo(x2, y2);
+  g.stroke();
+  // rounded caps
+  g.beginPath(); g.arc(x1, y1, w/2, 0, Math.PI*2); g.fill();
+  g.beginPath(); g.arc(x2, y2, w/2, 0, Math.PI*2); g.fill();
+}
+
+function drawPerfectCircle(cx, cy, r, g) {
+  const w = inkWidth(0.5);
+  g.strokeStyle = color;
+  g.lineWidth = w;
+  g.lineCap = 'round';
+  g.beginPath();
+  g.arc(cx, cy, r, 0, Math.PI * 2);
+  g.stroke();
+}
+
 function resizeCanvas(cv, parent) {
   const r = parent.getBoundingClientRect();
   const dpr = P.devicePixelRatio || 1;
@@ -323,9 +416,21 @@ function bindCanvasEvents(cv, parent, pressHint, g) {
 
   cv.addEventListener('pointerup', () => {
     if (!drawing) return;
-    if (tool === 'pen' && strokePoints.length >= 2) drawInkStroke(strokePoints, g);
+    if (tool === 'pen' && strokePoints.length >= 2) {
+      // save state before drawing
+      const cv = getActiveCanvas();
+      const preImg = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+      drawInkStroke(strokePoints, g);
+      // detect shape
+      const shape = detectShape(strokePoints);
+      if (shape) {
+        // restore & draw perfect shape
+        cv.getContext('2d').putImageData(preImg, 0, 0);
+        if (shape.type === 'line') drawPerfectLine(shape.x1, shape.y1, shape.x2, shape.y2, g);
+        else if (shape.type === 'circle') drawPerfectCircle(shape.cx, shape.cy, shape.r, g);
+      }
+    }
     drawing = false; strokePoints = [];
-    // auto-sync after each stroke in fullscreen
     if (parentOverlay) syncToEmbedded();
   });
   cv.addEventListener('pointerleave', () => { drawing = false; strokePoints = []; });
