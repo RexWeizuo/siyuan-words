@@ -16,8 +16,9 @@
   #toolbar .hint { font-size:11px; color:#888; margin-left:auto; }
   .swatch { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
   .swatch.active { border-color:#fff; box-shadow:0 0 4px rgba(255,255,255,0.5); }
-  #canvas-wrap { flex:1; position:relative; overflow:hidden; }
+  #canvas-wrap { flex:1; position:relative; overflow:hidden; min-height:500px; }
   canvas { position:absolute; top:0; left:0; touch-action:none; }
+  html { overflow-y: auto; }
   .pen-cursor,.pen-cursor canvas,.pen-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'%3E%3Cpath d='M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z' fill='white' stroke='black' stroke-width='0.6'/%3E%3C/svg%3E") 2 20, crosshair !important; }
   .eraser-cursor,.eraser-cursor canvas,.eraser-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='16' viewBox='0 0 22 16'%3E%3Crect x='3' y='2' width='16' height='8' rx='2' fill='white' stroke='black' stroke-width='0.6' transform='rotate(-10 11 6)'/%3E%3C/svg%3E") 11 8, cell !important; }
 </style>
@@ -196,10 +197,17 @@ const FS_TOOLBAR = `<div id="_wb_tb" style="display:flex;align-items:center;gap:
 </div>`;
 
 function enterFullscreen(){
+  // inject cursor CSS into parent document (iframe CSS doesn't apply to parent)
+  if(!PD.getElementById('_wb_cursor_css')){
+    const style=PD.createElement('style');
+    style.id='_wb_cursor_css';
+    style.textContent='._wb_pen_c{cursor:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'22\' viewBox=\'0 0 16 22\'%3E%3Cpath d=\'M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z\' fill=\'white\' stroke=\'black\' stroke-width=\'0.6\'/%3E%3C/svg%3E") 2 20, crosshair !important}._wb_eraser_c{cursor:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'22\' height=\'16\' viewBox=\'0 0 22 16\'%3E%3Crect x=\'3\' y=\'2\' width=\'16\' height=\'8\' rx=\'2\' fill=\'white\' stroke=\'black\' stroke-width=\'0.6\' transform=\'rotate(-10 11 6)\'/%3E%3C/svg%3E") 11 8, cell !important}';
+    PD.head.appendChild(style);
+  }
   fsOverlay=PD.createElement('div');
   fsOverlay.id='_wb_fs';
   fsOverlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;background:#1e1e1e;display:flex;flex-direction:column;';
-  fsOverlay.className=tool==='eraser'?'eraser-cursor':'pen-cursor';
+  fsOverlay.className=tool==='eraser'?'_wb_eraser_c':'_wb_pen_c';
   const wrapDiv=PD.createElement('div'); wrapDiv.id='_wb_fsw'; wrapDiv.style.cssText='flex:1;position:relative;overflow:hidden;';
   fsCanvas=PD.createElement('canvas'); fsCanvas.style.cssText='position:absolute;top:0;left:0;touch-action:none;';
   wrapDiv.appendChild(fsCanvas);
@@ -223,6 +231,8 @@ function exitFullscreen(){
   ctx.drawImage(fsCanvas,0,0);
   window.removeEventListener('resize',onFSResize);
   PD.body.removeChild(fsOverlay);
+  // remove injected cursor CSS
+  const css=PD.getElementById('_wb_cursor_css'); if(css)css.remove();
   fsOverlay=null;fsCanvas=null;
   document.getElementById('btn-fullscreen').textContent='全屏';
   document.getElementById('btn-fullscreen').classList.remove('active');
@@ -239,10 +249,10 @@ function bindFSToolbar(){
   function upd(){
     if(tool==='eraser'){
       eraser.style.background='#3574f0';pen.style.background='transparent';
-      sz.value=eraserSize;szv.textContent=eraserSize;fsOverlay.className='eraser-cursor';
+      sz.value=eraserSize;szv.textContent=eraserSize;fsOverlay.className='_wb_eraser_c';
     }else{
       pen.style.background='#3574f0';eraser.style.background='transparent';
-      sz.value=penSize;szv.textContent=penSize;fsOverlay.className='pen-cursor';
+      sz.value=penSize;szv.textContent=penSize;fsOverlay.className='_wb_pen_c';
     }
   }upd();
   pen.addEventListener('click',()=>{tool='pen';upd();});
