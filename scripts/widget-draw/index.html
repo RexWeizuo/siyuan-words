@@ -26,24 +26,33 @@
   }
   #toolbar button.active { background: var(--accent); border-color: var(--accent); }
   #toolbar button:hover { opacity: 0.8; }
-  #toolbar input[type="color"] {
-    width: 28px; height: 28px; border: 1px solid var(--border);
-    border-radius: 4px; cursor: pointer; background: transparent; padding: 2px;
-  }
-  #toolbar input[type="range"] { width: 60px; cursor: pointer; }
   #toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
+  #toolbar input[type="range"] { width: 60px; cursor: pointer; }
   #toolbar .hint { font-size: 11px; color: #888; margin-left: auto; }
-  #canvas-wrap { flex: 1; position: relative; overflow: hidden; cursor: crosshair; }
+  /* color swatches */
+  .swatch {
+    width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;
+    cursor: pointer; flex-shrink: 0;
+  }
+  .swatch.active { border-color: #fff; box-shadow: 0 0 4px rgba(255,255,255,0.5); }
+  #canvas-wrap { flex: 1; position: relative; overflow: hidden; }
   canvas { position: absolute; top: 0; left: 0; touch-action: none; }
+
+  /* custom cursors */
+  .cursor-pen { cursor: crosshair; }
+  .cursor-pen canvas { cursor: crosshair; }
+  .cursor-eraser { cursor: cell; }
+  .cursor-eraser canvas { cursor: cell; }
 </style>
 </head>
-<body>
+<body class="cursor-pen">
 
 <div id="toolbar">
   <button id="btn-pen" class="active">笔</button>
   <button id="btn-eraser">橡皮</button>
   <span class="sep"></span>
-  <input type="color" id="color" value="#ffffff">
+  <span id="swatches" style="display:flex;align-items:center;gap:4px"></span>
+  <span class="sep"></span>
   <span style="font-size:12px">粗细</span>
   <input type="range" id="size" min="0.3" max="6" value="1.2" step="0.1">
   <span id="size-val" style="font-size:12px;min-width:24px">1.2</span>
@@ -65,93 +74,78 @@ const ctx = canvas.getContext('2d');
 const P = window.parent;
 const PD = P.document;
 
+const COLORS = ['#ffffff','#ffd43b','#69db7c','#4dabf7','#ff6b6b','#e599f7','#ff922b'];
+let color = COLORS[0];
 let tool = 'pen';
-let color = '#ffffff';
 let penSize = 1.2;
 let eraserSize = 10;
 
 const undoStack = [];
 const MAX_UNDO = 50;
 let drawing = false;
-let strokePoints = []; // collected points for current stroke
+let strokePoints = [];
 
-// ---- OneNote-style inking ----
-// Non-linear pressure curve: gives more control in the light range
-// pow(0.55) compresses high pressure slightly, expands mid-range
+// ---- color swatches ----
+function buildSwatches() {
+  const container = document.getElementById('swatches');
+  COLORS.forEach((c, i) => {
+    const s = document.createElement('div');
+    s.className = 'swatch' + (i === 0 ? ' active' : '');
+    s.style.background = c;
+    s.title = c;
+    s.addEventListener('click', () => {
+      color = c;
+      container.querySelectorAll('.swatch').forEach(el => el.classList.remove('active'));
+      s.classList.add('active');
+    });
+    container.appendChild(s);
+  });
+}
+buildSwatches();
+
+// ---- OneNote-style ink ----
 function inkWidth(pressure) {
-  const p = Math.pow(pressure, 0.55);
-  return penSize * 2 * p;
+  return penSize * 2 * Math.pow(pressure, 0.55);
 }
 
-// Smooth a point array with a simple moving average (reduces jitter)
-function smoothPoints(pts, windowSize) {
+function smoothPoints(pts) {
   if (pts.length < 3) return pts;
   const out = [pts[0]];
   for (let i = 1; i < pts.length - 1; i++) {
-    const len = Math.min(windowSize, i + 1, pts.length - i);
-    let sx = 0, sy = 0, sp = 0, n = 0;
-    for (let j = -Math.floor(len/2); j <= Math.floor(len/2); j++) {
-      sx += pts[i+j].x; sy += pts[i+j].y; sp += pts[i+j].p; n++;
-    }
-    out.push({ x: sx/n, y: sy/n, p: sp/n });
+    const w = Math.min(2, i, pts.length - 1 - i);
+    let sx=0, sy=0, sp=0, n=0;
+    for (let j=-w; j<=w; j++) { sx+=pts[i+j].x; sy+=pts[i+j].y; sp+=pts[i+j].p; n++; }
+    out.push({x:sx/n, y:sy/n, p:sp/n});
   }
   out.push(pts[pts.length-1]);
   return out;
 }
 
-// Draw the stroke with variable width — tapered ends, smooth transitions
 function drawInkStroke(pts, g) {
   if (pts.length < 2) return;
-
-  // Smooth raw points
-  const raw = smoothPoints(pts, 3);
-
-  // Build segments with widths
+  const raw = smoothPoints(pts);
   const segs = raw.map((pt, i) => {
-    let p = pt.p;
-    // Taper: first and last 15% of stroke fade in/out
-    const len = raw.length;
-    const t = i / Math.max(len - 1, 1);
+    const t = i / Math.max(raw.length - 1, 1);
     const taper = Math.min(t / 0.15, (1 - t) / 0.15, 1);
-    const w = inkWidth(p) * Math.max(taper, 0.2);
-    return { ...pt, w };
+    return { ...pt, w: inkWidth(pt.p) * Math.max(taper, 0.2) };
   });
 
-  // Draw using filled trapezoids between consecutive points
   g.fillStyle = color;
-  g.strokeStyle = color;
-  g.lineCap = 'round';
-  g.lineJoin = 'round';
-
-  // Draw the core path with varying width using overlapping circles + trapezoids
   for (let i = 0; i < segs.length - 1; i++) {
     const a = segs[i], b = segs[i+1];
     const dx = b.x - a.x, dy = b.y - a.y;
     const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 0.5) continue;
-
+    if (dist < 0.3) continue;
     const nx = -dy / dist, ny = dx / dist;
-
-    // Trapezoid: (a-, a+, b+, b-)
-    const a1x = a.x + nx * a.w/2, a1y = a.y + ny * a.w/2;
-    const a2x = a.x - nx * a.w/2, a2y = a.y - ny * a.w/2;
-    const b1x = b.x + nx * b.w/2, b1y = b.y + ny * b.w/2;
-    const b2x = b.x - nx * b.w/2, b2y = b.y - ny * b.w/2;
-
     g.beginPath();
-    g.moveTo(a1x, a1y);
-    g.lineTo(b1x, b1y);
-    g.lineTo(b2x, b2y);
-    g.lineTo(a2x, a2y);
-    g.closePath();
-    g.fill();
+    g.moveTo(a.x + nx*a.w/2, a.y + ny*a.w/2);
+    g.lineTo(b.x + nx*b.w/2, b.y + ny*b.w/2);
+    g.lineTo(b.x - nx*b.w/2, b.y - ny*b.w/2);
+    g.lineTo(a.x - nx*a.w/2, a.y - ny*a.w/2);
+    g.closePath(); g.fill();
   }
-
-  // Cap circle at each point for smooth joins
   for (const pt of segs) {
-    g.beginPath();
-    g.arc(pt.x, pt.y, pt.w / 2, 0, Math.PI * 2);
-    g.fill();
+    g.beginPath(); g.arc(pt.x, pt.y, pt.w/2, 0, Math.PI*2); g.fill();
   }
 }
 
@@ -172,19 +166,25 @@ function resize() { resizeCanvas(canvas, wrap); }
 resize();
 window.addEventListener('resize', resize);
 
-// ---- fullscreen (parent document) ----
+// ---- fullscreen ----
 let parentOverlay = null;
 let parentCanvas = null;
+let autoSaveTimer = null;
 
 function getActiveCanvas() { return parentCanvas || canvas; }
 function getActiveCtx() { return getActiveCanvas().getContext('2d'); }
+
+const SWATCH_HTML = COLORS.map((c, i) =>
+  `<div class="sdf-swatch" data-color="${c}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${i===0?'#fff':'transparent'};background:${c};cursor:pointer;flex-shrink:0;box-shadow:${i===0?'0 0 4px rgba(255,255,255,0.5)':'none'}"></div>`
+).join('');
 
 const TOOLBAR_HTML = `
 <div id="siyuan-draw-fs-tb" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:#2d2d2d;border-bottom:1px solid #444;flex-wrap:wrap;flex-shrink:0;">
   <button id="sdf-btn-pen" class="sdf-active" style="background:#3574f0;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">笔</button>
   <button id="sdf-btn-eraser" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">橡皮</button>
   <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
-  <input type="color" id="sdf-color" value="${color}" style="width:28px;height:28px;border:1px solid #444;border-radius:4px;cursor:pointer;background:transparent;padding:2px">
+  <span id="sdf-swatches" style="display:flex;align-items:center;gap:4px">${SWATCH_HTML}</span>
+  <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
   <span style="font-size:12px;color:#ccc">粗细</span>
   <input type="range" id="sdf-size" min="0.3" max="6" value="${penSize}" step="0.1" style="width:60px;cursor:pointer">
   <span id="sdf-size-val" style="font-size:12px;color:#ccc;min-width:24px">${penSize}</span>
@@ -196,55 +196,83 @@ const TOOLBAR_HTML = `
   <span id="sdf-pressure" style="font-size:11px;color:#888;margin-left:auto">笔触: -</span>
 </div>`;
 
+function syncToEmbedded() {
+  // copy fullscreen canvas content back to embedded canvas
+  if (!parentCanvas) return;
+  resizeCanvas(canvas, wrap);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(parentCanvas, 0, 0);
+}
+
 function enterFullscreen() {
   parentOverlay = PD.createElement('div');
   parentOverlay.id = 'siyuan-draw-fs';
   parentOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#1e1e1e;display:flex;flex-direction:column;';
-  parentOverlay.innerHTML = TOOLBAR_HTML + '<div id="siyuan-draw-fs-wrap" style="flex:1;position:relative;overflow:hidden;cursor:crosshair"><canvas id="siyuan-draw-fs-cv" style="position:absolute;top:0;left:0;touch-action:none"></canvas></div>';
+  parentOverlay.innerHTML = TOOLBAR_HTML + '<div id="siyuan-draw-fs-wrap" style="flex:1;position:relative;overflow:hidden"><canvas id="siyuan-draw-fs-cv" style="position:absolute;top:0;left:0;touch-action:none"></canvas></div>';
   PD.body.appendChild(parentOverlay);
   parentCanvas = PD.getElementById('siyuan-draw-fs-cv');
   const pw = PD.getElementById('siyuan-draw-fs-wrap');
+  pw.className = 'cursor-pen';
   resizeCanvas(parentCanvas, pw);
   parentCanvas.getContext('2d').drawImage(canvas, 0, 0);
   bindFullscreenEvents(pw, parentCanvas);
   updateFullscreenToolUI();
   document.getElementById('btn-fullscreen').textContent = '退出';
   document.getElementById('btn-fullscreen').classList.add('active');
+  // auto-save every 5s
+  autoSaveTimer = setInterval(syncToEmbedded, 5000);
   window.addEventListener('resize', onParentResize);
 }
 
 function exitFullscreen() {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(parentCanvas, 0, 0);
+  clearInterval(autoSaveTimer);
+  syncToEmbedded();
   window.removeEventListener('resize', onParentResize);
   PD.body.removeChild(parentOverlay);
   parentCanvas = null; parentOverlay = null;
-  resizeCanvas(canvas, wrap);
   document.getElementById('btn-fullscreen').textContent = '全屏';
   document.getElementById('btn-fullscreen').classList.remove('active');
 }
 
 function onParentResize() {
   if (!parentCanvas) return;
+  syncToEmbedded();
   resizeCanvas(parentCanvas, PD.getElementById('siyuan-draw-fs-wrap'));
+  parentCanvas.getContext('2d').drawImage(canvas, 0, 0);
 }
 
 function updateFullscreenToolUI() {
   const penBtn = PD.getElementById('sdf-btn-pen');
   const eraserBtn = PD.getElementById('sdf-btn-eraser');
+  const pw = PD.getElementById('siyuan-draw-fs-wrap');
   if (tool === 'eraser') {
     eraserBtn.style.background = '#3574f0'; penBtn.style.background = 'transparent';
+    pw.className = 'cursor-eraser';
   } else {
     penBtn.style.background = '#3574f0'; eraserBtn.style.background = 'transparent';
+    pw.className = 'cursor-pen';
   }
   PD.getElementById('sdf-size').value = (tool === 'eraser') ? eraserSize : penSize;
   PD.getElementById('sdf-size-val').textContent = (tool === 'eraser') ? eraserSize : penSize;
 }
 
 function bindFullscreenEvents(pw, pcv) {
-  PD.getElementById('sdf-btn-pen').addEventListener('click', () => { tool='pen'; pw.style.cursor='crosshair'; updateFullscreenToolUI(); });
-  PD.getElementById('sdf-btn-eraser').addEventListener('click', () => { tool='eraser'; pw.style.cursor='cell'; updateFullscreenToolUI(); });
-  PD.getElementById('sdf-color').addEventListener('input', (e) => color = e.target.value);
+  PD.getElementById('sdf-btn-pen').addEventListener('click', () => { tool='pen'; updateFullscreenToolUI(); });
+  PD.getElementById('sdf-btn-eraser').addEventListener('click', () => { tool='eraser'; updateFullscreenToolUI(); });
+
+  // color swatches in fullscreen
+  PD.getElementById('sdf-swatches').addEventListener('click', (e) => {
+    const sw = e.target.closest('.sdf-swatch');
+    if (!sw) return;
+    color = sw.dataset.color;
+    PD.querySelectorAll('.sdf-swatch').forEach(el => {
+      el.style.borderColor = 'transparent';
+      el.style.boxShadow = 'none';
+    });
+    sw.style.borderColor = '#fff';
+    sw.style.boxShadow = '0 0 4px rgba(255,255,255,0.5)';
+  });
+
   PD.getElementById('sdf-size').addEventListener('input', (e) => {
     const v = parseFloat(e.target.value);
     if (tool === 'eraser') eraserSize = v; else penSize = v;
@@ -253,21 +281,16 @@ function bindFullscreenEvents(pw, pcv) {
   PD.getElementById('sdf-btn-undo').addEventListener('click', undoSnapshot);
   PD.getElementById('sdf-btn-clear').addEventListener('click', clearAll);
   PD.getElementById('sdf-btn-exit').addEventListener('click', exitFullscreen);
-  PD.getElementById('sdf-btn-save').addEventListener('click', () => {
-    const l = PD.createElement('a');
-    l.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
-    l.href = pcv.toDataURL('image/png'); l.click();
-  });
+  PD.getElementById('sdf-btn-save').addEventListener('click', savePNG);
 
-  const pressHint = PD.getElementById('sdf-pressure');
-  bindCanvasEvents(pcv, pw, pressHint, pcv.getContext('2d'));
+  bindCanvasEvents(pcv, pw, PD.getElementById('sdf-pressure'), pcv.getContext('2d'));
 }
 
-// ---- shared canvas event binding ----
+// ---- shared canvas events ----
 function bindCanvasEvents(cv, parent, pressHint, g) {
   function getPos(e) {
     const r = cv.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure || 0.5, t: Date.now() };
+    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure || 0.5 };
   }
 
   cv.addEventListener('pointerdown', (e) => {
@@ -280,7 +303,6 @@ function bindCanvasEvents(cv, parent, pressHint, g) {
       g.beginPath(); g.arc(strokePoints[0].x, strokePoints[0].y, eraserSize/2, 0, Math.PI*2); g.fill();
       g.globalCompositeOperation = 'source-over';
     } else {
-      // Draw a dot at start (for tap)
       const w = inkWidth(strokePoints[0].p);
       g.fillStyle = color;
       g.beginPath(); g.arc(strokePoints[0].x, strokePoints[0].y, w/2, 0, Math.PI*2); g.fill();
@@ -292,21 +314,19 @@ function bindCanvasEvents(cv, parent, pressHint, g) {
     const p = getPos(e);
     pressHint.textContent = p.p.toFixed(2);
     strokePoints.push(p);
-
     if (tool === 'eraser') {
       g.globalCompositeOperation = 'destination-out';
-      g.beginPath();
-      g.arc(p.x, p.y, eraserSize/2, 0, Math.PI*2); g.fill();
+      g.beginPath(); g.arc(p.x, p.y, eraserSize/2, 0, Math.PI*2); g.fill();
       g.globalCompositeOperation = 'source-over';
     }
   });
 
   cv.addEventListener('pointerup', () => {
     if (!drawing) return;
-    if (tool === 'pen' && strokePoints.length >= 2) {
-      drawInkStroke(strokePoints, g);
-    }
+    if (tool === 'pen' && strokePoints.length >= 2) drawInkStroke(strokePoints, g);
     drawing = false; strokePoints = [];
+    // auto-sync after each stroke in fullscreen
+    if (parentOverlay) syncToEmbedded();
   });
   cv.addEventListener('pointerleave', () => { drawing = false; strokePoints = []; });
 }
@@ -323,20 +343,29 @@ function snapshot() {
 function undoSnapshot() {
   if (undoStack.length === 0) return;
   const cv = getActiveCanvas();
-  const c = cv.getContext('2d');
-  c.putImageData(undoStack.pop(), 0, 0);
+  cv.getContext('2d').putImageData(undoStack.pop(), 0, 0);
+  if (parentOverlay) syncToEmbedded();
 }
 function clearAll() {
   snapshot();
   const cv = getActiveCanvas();
   const c = cv.getContext('2d');
   c.clearRect(0, 0, cv.width, cv.height);
+  if (parentOverlay) syncToEmbedded();
+}
+
+function savePNG() {
+  const cv = parentCanvas || canvas;
+  const l = document.createElement('a');
+  l.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
+  l.href = cv.toDataURL('image/png'); l.click();
 }
 
 // ---- toolbar ----
 const sizeInput = document.getElementById('size');
 const sizeVal = document.getElementById('size-val');
 function updateSizeUI() {
+  document.body.className = tool === 'eraser' ? 'cursor-eraser' : 'cursor-pen';
   if (tool === 'eraser') { sizeInput.value = eraserSize; sizeVal.textContent = eraserSize; }
   else { sizeInput.value = penSize; sizeVal.textContent = penSize; }
 }
@@ -344,14 +373,13 @@ function updateSizeUI() {
 document.getElementById('btn-pen').addEventListener('click', function() {
   tool='pen'; this.classList.add('active');
   document.getElementById('btn-eraser').classList.remove('active');
-  canvas.style.cursor='crosshair'; updateSizeUI();
+  updateSizeUI();
 });
 document.getElementById('btn-eraser').addEventListener('click', function() {
   tool='eraser'; this.classList.add('active');
   document.getElementById('btn-pen').classList.remove('active');
-  canvas.style.cursor='cell'; updateSizeUI();
+  updateSizeUI();
 });
-document.getElementById('color').addEventListener('input', (e) => color = e.target.value);
 sizeInput.addEventListener('input', (e) => {
   const v = parseFloat(e.target.value);
   if (tool === 'eraser') eraserSize = v; else penSize = v;
@@ -359,15 +387,10 @@ sizeInput.addEventListener('input', (e) => {
 });
 document.getElementById('btn-undo').addEventListener('click', undoSnapshot);
 document.getElementById('btn-clear').addEventListener('click', clearAll);
-document.getElementById('btn-save').addEventListener('click', () => {
-  const l = document.createElement('a');
-  l.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
-  l.href = canvas.toDataURL('image/png'); l.click();
-});
-
 document.getElementById('btn-fullscreen').addEventListener('click', () => {
   if (parentOverlay) exitFullscreen(); else enterFullscreen();
 });
+document.getElementById('btn-save').addEventListener('click', savePNG);
 
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && parentOverlay) { e.preventDefault(); exitFullscreen(); }
