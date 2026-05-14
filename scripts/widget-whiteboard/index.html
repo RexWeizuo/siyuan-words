@@ -6,7 +6,7 @@
 <style>
   :root { --bg:#1e1e1e; --surface:#2d2d2d; --text:#ccc; --border:#444; --accent:#3574f0; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; display:flex; flex-direction:column; height:100vh; overflow:hidden; user-select:none; -webkit-user-select:none; }
+  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; display:flex; flex-direction:column; min-height:100vh; overflow:auto; user-select:none; -webkit-user-select:none; }
   #toolbar { display:flex; align-items:center; gap:6px; padding:6px 10px; background:var(--surface); border-bottom:1px solid var(--border); flex-wrap:wrap; }
   #toolbar button { background:transparent; border:1px solid var(--border); color:var(--text); padding:4px 10px; border-radius:4px; cursor:pointer; font-size:13px; }
   #toolbar button.active { background:var(--accent); border-color:var(--accent); }
@@ -16,7 +16,7 @@
   #toolbar .hint { font-size:11px; color:#888; margin-left:auto; }
   .swatch { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
   .swatch.active { border-color:#fff; box-shadow:0 0 4px rgba(255,255,255,0.5); }
-  #canvas-wrap { flex:1; position:relative; overflow:hidden; min-height:500px; }
+  #canvas-wrap { flex:1; position:relative; overflow:hidden; min-height:70vh; }
   canvas { position:absolute; top:0; left:0; touch-action:none; }
   html { overflow-y: auto; }
   .pen-cursor,.pen-cursor canvas,.pen-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'%3E%3Cpath d='M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z' fill='white' stroke='black' stroke-width='0.6'/%3E%3C/svg%3E") 2 20, crosshair !important; }
