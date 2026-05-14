@@ -1,34 +1,20 @@
 <!DOCTYPE html>
 <html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
   :root { --bg:#1e1e1e; --surface:#2d2d2d; --text:#ccc; --border:#444; --accent:#3574f0; }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; display:flex; flex-direction:column; min-height:100vh; overflow:auto; user-select:none; -webkit-user-select:none; }
-  #canvas-wrap { flex:1; position:relative; overflow:hidden; min-height:85vh; }
-  /* toolbar hidden in embedded mode */
-  #toolbar { display:none; }
-  #toolbar button { background:transparent; border:1px solid var(--border); color:var(--text); padding:4px 10px; border-radius:4px; cursor:pointer; font-size:13px; }
-  #toolbar button.active { background:var(--accent); border-color:var(--accent); }
-  #toolbar button:hover { opacity:0.8; }
-  #toolbar .sep { width:1px; height:20px; background:var(--border); margin:0 4px; }
-  #toolbar input[type="range"] { width:60px; cursor:pointer; }
-  #toolbar .hint { font-size:11px; color:#888; margin-left:auto; }
-  .swatch { width:22px; height:22px; border-radius:50%; border:2px solid transparent; cursor:pointer; }
-  .swatch.active { border-color:#fff; box-shadow:0 0 4px rgba(255,255,255,0.5); }
-  /* floating btn for embedded mode */
+  body { background:var(--bg); color:var(--text); font-family:system-ui,sans-serif; display:flex; flex-direction:column; height:800px; overflow:auto; user-select:none; -webkit-user-select:none; }
+  canvas { touch-action:none; }
+  #canvas-wrap { flex:1; position:relative; overflow:hidden; min-height:800px; }
+  #canvas-wrap canvas { position:absolute; top:0; left:0; }
   #float-btn { position:absolute; bottom:8px; right:8px; z-index:10; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; opacity:0.7; }
   #float-btn:hover { opacity:1; }
-  canvas { position:absolute; top:0; left:0; touch-action:none; }
-  html { overflow-y: auto; }
   .pen-cursor,.pen-cursor canvas,.pen-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'%3E%3Cpath d='M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z' fill='white' stroke='black' stroke-width='0.6'/%3E%3C/svg%3E") 2 20, crosshair !important; }
   .eraser-cursor,.eraser-cursor canvas,.eraser-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='16' viewBox='0 0 22 16'%3E%3Crect x='3' y='2' width='16' height='8' rx='2' fill='white' stroke='black' stroke-width='0.6' transform='rotate(-10 11 6)'/%3E%3C/svg%3E") 11 8, cell !important; }
-</style>
-</head>
+</style></head>
 <body class="pen-cursor">
-
 <div id="canvas-wrap">
   <canvas id="c"></canvas>
   <button id="float-btn">全屏编辑</button>
@@ -38,148 +24,76 @@
 const P=window.parent, PD=P.document;
 const COLORS=['#ffffff','#ffd43b','#69db7c','#4dabf7','#ff6b6b','#e599f7','#ff922b'];
 let color=COLORS[0], tool='pen', penSize=1.2, eraserSize=10;
-
 const undoStack=[], MAX_UNDO=50;
 let drawing=false, strokePoints=[], strokeSnaps=[];
-let drawTimer=0; // requestAnimationFrame timer for real-time drawing
 
+// ---- embedded canvas ----
 const wrap=document.getElementById('canvas-wrap');
 const canvas=document.getElementById('c');
 const ctx=canvas.getContext('2d');
-
-function resizeCanvas(cv, parent) {
-  const r=parent.getBoundingClientRect();
-  const dpr=P.devicePixelRatio||1;
-  const w=r.width, h=r.height;
-  // save content before resize
-  const oldImg = (cv.width && cv.height) ? cv.getContext('2d').getImageData(0,0,cv.width,cv.height) : null;
-  cv.style.width=w+'px'; cv.style.height=h+'px';
-  cv.width=w*dpr; cv.height=h*dpr;
-  const g=cv.getContext('2d');
-  g.setTransform(1,0,0,1,0,0); g.scale(dpr,dpr);
-  // restore content
-  if(oldImg) g.putImageData(oldImg,0,0);
-}
+function resizeCanvas(cv,parent){const r=parent.getBoundingClientRect(),dpr=P.devicePixelRatio||1,w=r.width,h=r.height,old=(cv.width&&cv.height)?cv.getContext('2d').getImageData(0,0,cv.width,cv.height):null;cv.style.width=w+'px';cv.style.height=h+'px';cv.width=w*dpr;cv.height=h*dpr;const g=cv.getContext('2d');g.setTransform(1,0,0,1,0,0);g.scale(dpr,dpr);if(old)g.putImageData(old,0,0);}
 resizeCanvas(canvas,wrap);
 window.addEventListener('resize',()=>resizeCanvas(canvas,wrap));
 
 // ---- ink ----
-function inkW(p){ return penSize*Math.pow(p||0.5,0.55)*2.2; }
-
-function drawStrokeSegment(g,pts,startIdx,endIdx){
-  const n=pts.length; if(n<2)return;
-  g.fillStyle=color; g.strokeStyle=color; g.lineCap='round'; g.lineJoin='round';
-  const midP=pts[Math.floor(n/2)].p;
-  g.beginPath(); g.moveTo(pts[0].x,pts[0].y);
-  for(let i=1;i<n;i++) g.lineTo(pts[i].x,pts[i].y);
-  g.lineWidth=inkW(midP); g.stroke();
-  g.beginPath(); g.arc(pts[0].x,pts[0].y,inkW(pts[0].p)/2,0,Math.PI*2); g.fill();
-  g.beginPath(); g.arc(pts[n-1].x,pts[n-1].y,inkW(pts[n-1].p)/2,0,Math.PI*2); g.fill();
+function inkW(p){return penSize*Math.pow(p||0.5,0.55)*2.2;}
+function drawStrokeSegment(g,pts){
+  if(pts.length<2)return;g.fillStyle=color;g.strokeStyle=color;g.lineCap='round';g.lineJoin='round';
+  const mid=pts[Math.floor(pts.length/2)];
+  g.beginPath();g.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)g.lineTo(pts[i].x,pts[i].y);g.lineWidth=inkW(mid.p);g.stroke();
+  g.beginPath();g.arc(pts[0].x,pts[0].y,inkW(pts[0].p)/2,0,Math.PI*2);g.fill();
+  g.beginPath();g.arc(pts[pts.length-1].x,pts[pts.length-1].y,inkW(pts[pts.length-1].p)/2,0,Math.PI*2);g.fill();
 }
-
-// ---- shape detection ----
 function detectShape(pts){
-  if(pts.length<5)return null;
-  const step=Math.max(1,Math.floor(pts.length/40));
-  const sp=pts.filter((_,i)=>i%step===0); if(sp.length<5)return null;
-  const sx=sp[0].x,sy=sp[0].y,ex=sp[sp.length-1].x,ey=sp[sp.length-1].y;
-  const lineDist=Math.hypot(ex-sx,ey-sy);
-  if(lineDist>30){
-    let maxDev=0,pathLen=0;
-    const dx=ex-sx,dy=ey-sy,lenSq=dx*dx+dy*dy;
-    for(const p of sp) maxDev=Math.max(maxDev,Math.hypot(p.x-(sx+((p.x-sx)*dx+(p.y-sy)*dy)/lenSq*dx),p.y-(sy+((p.x-sx)*dx+(p.y-sy)*dy)/lenSq*dy)));
-    for(let i=1;i<sp.length;i++) pathLen+=Math.hypot(sp[i].x-sp[i-1].x,sp[i].y-sp[i-1].y);
-    if(maxDev<lineDist*0.12&&pathLen/lineDist<1.3) return {type:'line',x1:sx,y1:sy,x2:ex,y2:ey};
-  }
+  if(pts.length<5)return null;const step=Math.max(1,Math.floor(pts.length/40));const sp=pts.filter((_,i)=>i%step===0);if(sp.length<5)return null;
+  const sx=sp[0].x,sy=sp[0].y,ex=sp[sp.length-1].x,ey=sp[sp.length-1].y,lineDist=Math.hypot(ex-sx,ey-sy);
+  if(lineDist>30){let maxDev=0,pathLen=0;const dx=ex-sx,dy=ey-sy,lenSq=dx*dx+dy*dy;
+    for(const p of sp)maxDev=Math.max(maxDev,Math.hypot(p.x-(sx+((p.x-sx)*dx+(p.y-sy)*dy)/lenSq*dx),p.y-(sy+((p.x-sx)*dx+(p.y-sy)*dy)/lenSq*dy)));
+    for(let i=1;i<sp.length;i++)pathLen+=Math.hypot(sp[i].x-sp[i-1].x,sp[i].y-sp[i-1].y);
+    if(maxDev<lineDist*0.12&&pathLen/lineDist<1.3)return{type:'line',x1:sx,y1:sy,x2:ex,y2:ey};}
   let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-  for(const p of sp){ if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; }
-  const cx=(minX+maxX)/2,cy=(minY+maxY)/2,rx=(maxX-minX)/2,ry=(maxY-minY)/2,avgR=(rx+ry)/2;
-  if(avgR<15)return null;
-  let maxRadDev=0;
-  for(const p of sp) maxRadDev=Math.max(maxRadDev,Math.abs(Math.hypot(p.x-cx,p.y-cy)-avgR));
+  for(const p of sp){if(p.x<minX)minX=p.x;if(p.y<minY)minY=p.y;if(p.x>maxX)maxX=p.x;if(p.y>maxY)maxY=p.y;}
+  const cx=(minX+maxX)/2,cy=(minY+maxY)/2,rx=(maxX-minX)/2,ry=(maxY-minY)/2,avgR=(rx+ry)/2;if(avgR<15)return null;
+  let maxRadDev=0;for(const p of sp)maxRadDev=Math.max(maxRadDev,Math.abs(Math.hypot(p.x-cx,p.y-cy)-avgR));
   const closure=Math.hypot(sp[0].x-sp[sp.length-1].x,sp[0].y-sp[sp.length-1].y);
-  if(maxRadDev<avgR*0.3&&closure<avgR*0.5&&sp.length>=8) return {type:'circle',cx,cy,r:avgR};
-  return null;
-}
-function drawShape(shape,g){
-  const w=inkW(0.5);
-  if(shape.type==='line'){
-    g.strokeStyle=color; g.lineWidth=w; g.lineCap='round';
-    g.beginPath(); g.moveTo(shape.x1,shape.y1); g.lineTo(shape.x2,shape.y2); g.stroke();
-    g.fillStyle=color; g.beginPath(); g.arc(shape.x1,shape.y1,w/2,0,Math.PI*2); g.fill();
-    g.beginPath(); g.arc(shape.x2,shape.y2,w/2,0,Math.PI*2); g.fill();
-  } else {
-    g.strokeStyle=color; g.lineWidth=w;
-    g.beginPath(); g.arc(shape.cx,shape.cy,shape.r,0,Math.PI*2); g.stroke();
-  }
-}
+  if(maxRadDev<avgR*0.3&&closure<avgR*0.5&&sp.length>=8)return{type:'circle',cx,cy,r:avgR};return null;}
+function drawShape(shape,g){const w=inkW(0.5);
+  if(shape.type==='line'){g.strokeStyle=color;g.lineWidth=w;g.lineCap='round';g.beginPath();g.moveTo(shape.x1,shape.y1);g.lineTo(shape.x2,shape.y2);g.stroke();g.fillStyle=color;g.beginPath();g.arc(shape.x1,shape.y1,w/2,0,Math.PI*2);g.fill();g.beginPath();g.arc(shape.x2,shape.y2,w/2,0,Math.PI*2);g.fill();}
+  else{g.strokeStyle=color;g.lineWidth=w;g.beginPath();g.arc(shape.cx,shape.cy,shape.r,0,Math.PI*2);g.stroke();}}
 
 // ---- undo ----
 function snapshot(g,cv){if(undoStack.length>=MAX_UNDO)undoStack.shift();undoStack.push(g.getImageData(0,0,cv.width,cv.height));}
 function undoOp(g,cv){if(!undoStack.length)return;g.putImageData(undoStack.pop(),0,0);}
 function clearCanvas(g,cv){snapshot(g,cv);g.clearRect(0,0,cv.width,cv.height);}
 
-// ---- real-time draw: draw incrementally, not all at end ----
-function bindEvents(cv,parent,g){
+// ---- pointer events ----
+function bindEvents(cv,g){
   function getPos(e){const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure||0.5};}
-
   cv.addEventListener('pointerdown',(e)=>{
-    drawing=true; strokePoints=[getPos(e)]; strokeSnaps=[g.getImageData(0,0,cv.width,cv.height)];
-    snapshot(g,cv);
-    const ph=document.getElementById('pressure-hint'); if(ph)ph.textContent=strokePoints[0].p.toFixed(2);
-    if(tool==='eraser'){
-      g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';
-      g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,eraserSize/2,0,Math.PI*2);g.fill();
-      g.globalCompositeOperation='source-over';
-    }else{
-      g.fillStyle=color;const w=inkW(strokePoints[0].p);
-      g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,w/2,0,Math.PI*2);g.fill();
-    }
+    drawing=true;strokePoints=[getPos(e)];strokeSnaps=[g.getImageData(0,0,cv.width,cv.height)];snapshot(g,cv);
+    if(tool==='eraser'){g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,eraserSize/2,0,Math.PI*2);g.fill();g.globalCompositeOperation='source-over';}
+    else{g.fillStyle=color;g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,inkW(strokePoints[0].p)/2,0,Math.PI*2);g.fill();}
   });
-
   cv.addEventListener('pointermove',(e)=>{
-    if(!drawing)return;
-    const p=getPos(e); const ph2=document.getElementById('pressure-hint'); if(ph2)ph2.textContent=p.p.toFixed(2);
-    if(tool==='eraser'){
-      g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';
-      g.beginPath();g.arc(p.x,p.y,eraserSize/2,0,Math.PI*2);g.fill();
-      g.globalCompositeOperation='source-over';
-    }else{
-      strokePoints.push(p);
-      // Real-time: rollback to last snapshot, redraw from scratch
-      if(strokeSnaps.length) g.putImageData(strokeSnaps[strokeSnaps.length-1],0,0);
-      drawStrokeSegment(g,strokePoints,0,strokePoints.length);
-    }
+    if(!drawing)return;const p=getPos(e);
+    if(tool==='eraser'){g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';g.beginPath();g.arc(p.x,p.y,eraserSize/2,0,Math.PI*2);g.fill();g.globalCompositeOperation='source-over';}
+    else{strokePoints.push(p);if(strokeSnaps.length)g.putImageData(strokeSnaps[strokeSnaps.length-1],0,0);drawStrokeSegment(g,strokePoints);}
   });
-
-  cv.addEventListener('pointerup',()=>{
-    if(!drawing)return;
-    if(tool==='pen'&&strokePoints.length>=2){
-      const preImg=g.getImageData(0,0,cv.width,cv.height);
-      const shape=detectShape(strokePoints);
-      if(shape){
-        g.putImageData(preImg,0,0);
-        drawShape(shape,g);
-      }
-    }
-    drawing=false; strokePoints=[]; strokeSnaps=[];
-  });
+  cv.addEventListener('pointerup',()=>{if(!drawing)return;if(tool==='pen'&&strokePoints.length>=2){const pre=g.getImageData(0,0,cv.width,cv.height);const shape=detectShape(strokePoints);if(shape){g.putImageData(pre,0,0);drawShape(shape,g);}}drawing=false;strokePoints=[];strokeSnaps=[];});
   cv.addEventListener('pointerleave',()=>{drawing=false;strokePoints=[];strokeSnaps=[];});
 }
+bindEvents(canvas,ctx);
 
-bindEvents(canvas,wrap,ctx);
-
-// ---- fullscreen ----
-let fsOverlay=null,fsCanvas=null;
+// ---- fullscreen (large canvas 4000x3000, scrollable) ----
+let fsOverlay=null,fsCanvas=null,fsCtx=null;
+const FS_W=4000,FS_H=3000;
 const FS_TOOLBAR = `<div id="_wb_tb" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:#2d2d2d;border-bottom:1px solid #444;flex-wrap:wrap;flex-shrink:0">
   <button id="_wb_pen" class="_wb_act" style="background:#3574f0;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px"><svg width="14" height="14" viewBox="0 0 16 22"><path d="M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z" fill="currentColor"/></svg> 笔</button>
   <button id="_wb_eraser" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px"><svg width="14" height="14" viewBox="0 0 22 16"><rect x="3" y="2" width="16" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.2" transform="rotate(-10 11 6)"/></svg> 橡皮</button>
   <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
   ${COLORS.map((c,i)=>`<span class="_wb_sw" data-c="${c}" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:2px solid ${i===0?'#fff':'transparent'};background:${c};cursor:pointer;box-shadow:${i===0?'0 0 4px rgba(255,255,255,0.5)':'none'}"></span>`).join('')}
   <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
-  <span style="font-size:12px;color:#ccc">粗细</span>
-  <input type="range" id="_wb_sz" min="0.3" max="6" value="${penSize}" step="0.1" style="width:60px;cursor:pointer">
-  <span id="_wb_szv" style="font-size:12px;color:#ccc;min-width:24px">${penSize}</span>
+  <span style="font-size:12px;color:#ccc">粗细</span><input type="range" id="_wb_sz" min="0.3" max="6" value="${penSize}" step="0.1" style="width:60px;cursor:pointer"><span id="_wb_szv" style="font-size:12px;color:#ccc;min-width:24px">${penSize}</span>
   <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
   <button id="_wb_undo" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px">撤销</button>
   <button id="_wb_clear" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px">清空</button>
@@ -188,83 +102,34 @@ const FS_TOOLBAR = `<div id="_wb_tb" style="display:flex;align-items:center;gap:
 </div>`;
 
 function enterFullscreen(){
-  // inject cursor CSS into parent document (iframe CSS doesn't apply to parent)
-  if(!PD.getElementById('_wb_cursor_css')){
-    const style=PD.createElement('style');
-    style.id='_wb_cursor_css';
-    style.textContent='._wb_pen_c{cursor:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'22\' viewBox=\'0 0 16 22\'%3E%3Cpath d=\'M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z\' fill=\'white\' stroke=\'black\' stroke-width=\'0.6\'/%3E%3C/svg%3E") 2 20, crosshair !important}._wb_eraser_c{cursor:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'22\' height=\'16\' viewBox=\'0 0 22 16\'%3E%3Crect x=\'3\' y=\'2\' width=\'16\' height=\'8\' rx=\'2\' fill=\'white\' stroke=\'black\' stroke-width=\'0.6\' transform=\'rotate(-10 11 6)\'/%3E%3C/svg%3E") 11 8, cell !important}';
-    PD.head.appendChild(style);
-  }
-  fsOverlay=PD.createElement('div');
-  fsOverlay.id='_wb_fs';
-  fsOverlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;background:#1e1e1e;display:flex;flex-direction:column;';
-  fsOverlay.className=tool==='eraser'?'_wb_eraser_c':'_wb_pen_c';
-  const wrapDiv=PD.createElement('div'); wrapDiv.id='_wb_fsw'; wrapDiv.style.cssText='flex:1;position:relative;overflow:hidden;';
-  fsCanvas=PD.createElement('canvas'); fsCanvas.style.cssText='position:absolute;top:0;left:0;touch-action:none;';
-  wrapDiv.appendChild(fsCanvas);
-  fsOverlay.innerHTML=FS_TOOLBAR;
-  fsOverlay.appendChild(wrapDiv);
-  PD.body.appendChild(fsOverlay);
-
-  resizeCanvas(fsCanvas,wrapDiv);
-  fsCanvas.getContext('2d').drawImage(canvas,0,0);
-  bindEvents(fsCanvas,wrapDiv,fsCanvas.getContext('2d'));
-  bindFSToolbar();
-  document.getElementById('btn-fullscreen').textContent='退出';
-  document.getElementById('btn-fullscreen').classList.add('active');
-  window.addEventListener('resize',onFSResize);
+  if(!PD.getElementById('_wb_cursor_css')){const s=PD.createElement('style');s.id='_wb_cursor_css';s.textContent='._wb_pen_c{cursor:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'16\' height=\'22\' viewBox=\'0 0 16 22\'%3E%3Cpath d=\'M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z\' fill=\'white\' stroke=\'black\' stroke-width=\'0.6\'/%3E%3C/svg%3E") 2 20, crosshair !important}._wb_eraser_c{cursor:url("data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'22\' height=\'16\' viewBox=\'0 0 22 16\'%3E%3Crect x=\'3\' y=\'2\' width=\'16\' height=\'8\' rx=\'2\' fill=\'white\' stroke=\'black\' stroke-width=\'0.6\' transform=\'rotate(-10 11 6)\'/%3E%3C/svg%3E") 11 8, cell !important}';PD.head.appendChild(s);}
+  fsOverlay=PD.createElement('div');fsOverlay.id='_wb_fs';fsOverlay.style.cssText='position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;background:#1e1e1e;display:flex;flex-direction:column;';fsOverlay.className=tool==='eraser'?'_wb_eraser_c':'_wb_pen_c';
+  const wrapDiv=PD.createElement('div');wrapDiv.id='_wb_fsw';wrapDiv.style.cssText='flex:1;overflow:auto;';
+  fsCanvas=PD.createElement('canvas');fsCanvas.style.cssText='display:block;touch-action:none;';
+  const dpr=P.devicePixelRatio||1;fsCanvas.width=FS_W*dpr;fsCanvas.height=FS_H*dpr;fsCanvas.style.width=FS_W+'px';fsCanvas.style.height=FS_H+'px';
+  fsCtx=fsCanvas.getContext('2d');fsCtx.setTransform(1,0,0,1,0,0);fsCtx.scale(dpr,dpr);
+  fsCtx.drawImage(canvas,50,50);
+  wrapDiv.appendChild(fsCanvas);fsOverlay.innerHTML=FS_TOOLBAR;fsOverlay.appendChild(wrapDiv);PD.body.appendChild(fsOverlay);
+  // scroll to show content
+  wrapDiv.scrollLeft=50;wrapDiv.scrollTop=50;
+  bindEvents(fsCanvas,fsCtx);bindFSToolbar();
 }
-
 function exitFullscreen(){
-  // save back
-  resizeCanvas(canvas,wrap);
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(fsCanvas,0,0);
-  window.removeEventListener('resize',onFSResize);
-  PD.body.removeChild(fsOverlay);
-  // remove injected cursor CSS
-  const css=PD.getElementById('_wb_cursor_css'); if(css)css.remove();
-  fsOverlay=null;fsCanvas=null;
-  document.getElementById('btn-fullscreen').textContent='全屏';
-  document.getElementById('btn-fullscreen').classList.remove('active');
+  resizeCanvas(canvas,wrap);ctx.setTransform(1,0,0,1,0,0);const dpr=P.devicePixelRatio||1;ctx.scale(dpr,dpr);ctx.clearRect(0,0,canvas.width/dpr,canvas.height/dpr);ctx.drawImage(fsCanvas,50,50);ctx.setTransform(1,0,0,1,0,0);
+  const css=PD.getElementById('_wb_cursor_css');if(css)css.remove();
+  try{PD.body.removeChild(fsOverlay);}catch(e){}fsOverlay=null;fsCanvas=null;fsCtx=null;
 }
-
-function onFSResize(){
-  if(!fsCanvas)return;
-  resizeCanvas(fsCanvas,PD.getElementById('_wb_fsw'));
-}
-
 function bindFSToolbar(){
-  const pen=PD.getElementById('_wb_pen'),eraser=PD.getElementById('_wb_eraser');
-  const sz=PD.getElementById('_wb_sz'),szv=PD.getElementById('_wb_szv');
-  function upd(){
-    if(tool==='eraser'){
-      eraser.style.background='#3574f0';pen.style.background='transparent';
-      sz.value=eraserSize;szv.textContent=eraserSize;fsOverlay.className='_wb_eraser_c';
-    }else{
-      pen.style.background='#3574f0';eraser.style.background='transparent';
-      sz.value=penSize;szv.textContent=penSize;fsOverlay.className='_wb_pen_c';
-    }
-  }upd();
-  pen.addEventListener('click',()=>{tool='pen';upd();});
-  eraser.addEventListener('click',()=>{tool='eraser';upd();});
-  fsOverlay.addEventListener('click',(e)=>{
-    const sw=e.target.closest('._wb_sw');if(!sw)return;
-    color=sw.dataset.c;fsOverlay.querySelectorAll('._wb_sw').forEach(el=>{el.style.borderColor='transparent';el.style.boxShadow='none';});
-    sw.style.borderColor='#fff';sw.style.boxShadow='0 0 4px rgba(255,255,255,0.5)';
-  });
+  const pen=PD.getElementById('_wb_pen'),eraser=PD.getElementById('_wb_eraser'),sz=PD.getElementById('_wb_sz'),szv=PD.getElementById('_wb_szv'),pr=PD.getElementById('_wb_pr');
+  function upd(){if(tool==='eraser'){eraser.style.background='#3574f0';pen.style.background='transparent';sz.value=eraserSize;szv.textContent=eraserSize;fsOverlay.className='_wb_eraser_c';}else{pen.style.background='#3574f0';eraser.style.background='transparent';sz.value=penSize;szv.textContent=penSize;fsOverlay.className='_wb_pen_c';}}upd();
+  pen.addEventListener('click',()=>{tool='pen';upd();});eraser.addEventListener('click',()=>{tool='eraser';upd();});
+  fsOverlay.addEventListener('click',(e)=>{const sw=e.target.closest('._wb_sw');if(!sw)return;color=sw.dataset.c;fsOverlay.querySelectorAll('._wb_sw').forEach(el=>{el.style.borderColor='transparent';el.style.boxShadow='none';});sw.style.borderColor='#fff';sw.style.boxShadow='0 0 4px rgba(255,255,255,0.5)';});
   sz.addEventListener('input',()=>{const v=parseFloat(sz.value);if(tool==='eraser')eraserSize=v;else penSize=v;szv.textContent=v;});
-  PD.getElementById('_wb_undo').addEventListener('click',()=>undoOp(fsCanvas.getContext('2d'),fsCanvas));
-  PD.getElementById('_wb_clear').addEventListener('click',()=>clearCanvas(fsCanvas.getContext('2d'),fsCanvas));
+  PD.getElementById('_wb_undo').addEventListener('click',()=>undoOp(fsCtx,fsCanvas));
+  PD.getElementById('_wb_clear').addEventListener('click',()=>clearCanvas(fsCtx,fsCanvas));
   PD.getElementById('_wb_exit').addEventListener('click',exitFullscreen);
 }
 
-// floating button → enter fullscreen
 document.getElementById('float-btn').addEventListener('click',enterFullscreen);
-document.addEventListener('keydown',(e)=>{
-  if(e.key==='Escape'&&fsOverlay){e.preventDefault();exitFullscreen();}
-  if(e.ctrlKey&&e.key==='z'&&!e.target.closest('input')){e.preventDefault();undoOp(ctx,canvas);}
-});
-</script>
-</body>
-</html>
+document.addEventListener('keydown',(e)=>{if(e.key==='Escape'&&fsOverlay){e.preventDefault();exitFullscreen();}if(e.ctrlKey&&e.key==='z'&&!e.target.closest('input')){e.preventDefault();if(fsCtx)undoOp(fsCtx,fsCanvas);else undoOp(ctx,canvas);}});
+</script></body></html>
