@@ -9,7 +9,7 @@
   canvas { touch-action:none; }
   #canvas-wrap { flex:1; position:relative; overflow:hidden; min-height:800px; }
   #canvas-wrap canvas { position:absolute; top:0; left:0; }
-  #float-btn { position:absolute; bottom:8px; right:8px; z-index:10; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; opacity:0.7; }
+  #float-btn { position:absolute; top:8px; left:8px; z-index:10; background:var(--surface); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:13px; opacity:0.5; }
   #float-btn:hover { opacity:1; }
   .pen-cursor,.pen-cursor canvas,.pen-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'%3E%3Cpath d='M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z' fill='white' stroke='black' stroke-width='0.6'/%3E%3C/svg%3E") 2 20, crosshair !important; }
   .eraser-cursor,.eraser-cursor canvas,.eraser-cursor>* { cursor:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='16' viewBox='0 0 22 16'%3E%3Crect x='3' y='2' width='16' height='8' rx='2' fill='white' stroke='black' stroke-width='0.6' transform='rotate(-10 11 6)'/%3E%3C/svg%3E") 11 8, cell !important; }
@@ -25,7 +25,7 @@ const P=window.parent, PD=P.document;
 const COLORS=['#ffffff','#ffd43b','#69db7c','#4dabf7','#ff6b6b','#e599f7','#ff922b'];
 let color=COLORS[0], tool='pen', penSize=1.2, eraserSize=10;
 const undoStack=[], MAX_UNDO=50;
-let drawing=false, strokePoints=[], strokeSnaps=[];
+let drawing=false, strokePoints=[];
 
 // ---- embedded canvas ----
 const wrap=document.getElementById('canvas-wrap');
@@ -37,13 +37,6 @@ window.addEventListener('resize',()=>resizeCanvas(canvas,wrap));
 
 // ---- ink ----
 function inkW(p){return penSize*Math.pow(p||0.5,0.55)*2.2;}
-function drawStrokeSegment(g,pts){
-  if(pts.length<2)return;g.fillStyle=color;g.strokeStyle=color;g.lineCap='round';g.lineJoin='round';
-  const mid=pts[Math.floor(pts.length/2)];
-  g.beginPath();g.moveTo(pts[0].x,pts[0].y);for(let i=1;i<pts.length;i++)g.lineTo(pts[i].x,pts[i].y);g.lineWidth=inkW(mid.p);g.stroke();
-  g.beginPath();g.arc(pts[0].x,pts[0].y,inkW(pts[0].p)/2,0,Math.PI*2);g.fill();
-  g.beginPath();g.arc(pts[pts.length-1].x,pts[pts.length-1].y,inkW(pts[pts.length-1].p)/2,0,Math.PI*2);g.fill();
-}
 function detectShape(pts){
   if(pts.length<5)return null;const step=Math.max(1,Math.floor(pts.length/40));const sp=pts.filter((_,i)=>i%step===0);if(sp.length<5)return null;
   const sx=sp[0].x,sy=sp[0].y,ex=sp[sp.length-1].x,ey=sp[sp.length-1].y,lineDist=Math.hypot(ex-sx,ey-sy);
@@ -66,21 +59,54 @@ function snapshot(g,cv){if(undoStack.length>=MAX_UNDO)undoStack.shift();undoStac
 function undoOp(g,cv){if(!undoStack.length)return;g.putImageData(undoStack.pop(),0,0);}
 function clearCanvas(g,cv){snapshot(g,cv);g.clearRect(0,0,cv.width,cv.height);}
 
-// ---- pointer events ----
+// ---- pointer events (incremental draw for low latency) ----
 function bindEvents(cv,g){
   function getPos(e){const r=cv.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top,p:e.pressure||0.5};}
+  let lastDrawn=null; // last point drawn in current stroke
+
   cv.addEventListener('pointerdown',(e)=>{
-    drawing=true;strokePoints=[getPos(e)];strokeSnaps=[g.getImageData(0,0,cv.width,cv.height)];snapshot(g,cv);
-    if(tool==='eraser'){g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,eraserSize/2,0,Math.PI*2);g.fill();g.globalCompositeOperation='source-over';}
-    else{g.fillStyle=color;g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,inkW(strokePoints[0].p)/2,0,Math.PI*2);g.fill();}
+    drawing=true;strokePoints=[getPos(e)];lastDrawn=strokePoints[0];
+    snapshot(g,cv);
+    if(tool==='eraser'){
+      g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';
+      g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,eraserSize/2,0,Math.PI*2);g.fill();
+      g.globalCompositeOperation='source-over';
+    }else{g.fillStyle=color;g.beginPath();g.arc(strokePoints[0].x,strokePoints[0].y,inkW(strokePoints[0].p)/2,0,Math.PI*2);g.fill();}
   });
+
   cv.addEventListener('pointermove',(e)=>{
     if(!drawing)return;const p=getPos(e);
-    if(tool==='eraser'){g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';g.beginPath();g.arc(p.x,p.y,eraserSize/2,0,Math.PI*2);g.fill();g.globalCompositeOperation='source-over';}
-    else{strokePoints.push(p);if(strokeSnaps.length)g.putImageData(strokeSnaps[strokeSnaps.length-1],0,0);drawStrokeSegment(g,strokePoints);}
+    if(tool==='eraser'){
+      g.globalCompositeOperation='destination-out';g.fillStyle='rgba(0,0,0,1)';
+      g.beginPath();g.arc(p.x,p.y,eraserSize/2,0,Math.PI*2);g.fill();
+      g.globalCompositeOperation='source-over';
+    }else{
+      strokePoints.push(p);
+      // incremental: only draw segment from lastDrawn to p
+      const a=lastDrawn,b=p;const dx=b.x-a.x,dy=b.y-a.y;const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist>0.3){
+        g.fillStyle=color;g.strokeStyle=color;g.lineCap='round';g.lineJoin='round';
+        const wa=inkW(a.p),wb=inkW(b.p);
+        g.lineWidth=(wa+wb)/2;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();
+        g.beginPath();g.arc(b.x,b.y,wb/2,0,Math.PI*2);g.fill();
+      }
+      lastDrawn=b;
+    }
   });
-  cv.addEventListener('pointerup',()=>{if(!drawing)return;if(tool==='pen'&&strokePoints.length>=2){const pre=g.getImageData(0,0,cv.width,cv.height);const shape=detectShape(strokePoints);if(shape){g.putImageData(pre,0,0);drawShape(shape,g);}}drawing=false;strokePoints=[];strokeSnaps=[];});
-  cv.addEventListener('pointerleave',()=>{drawing=false;strokePoints=[];strokeSnaps=[];});
+
+  cv.addEventListener('pointerup',()=>{
+    if(!drawing)return;
+    if(tool==='pen'&&strokePoints.length>=2){
+      const shape=detectShape(strokePoints);
+      if(shape){
+        // undo the raw stroke, draw perfect shape
+        undoOp(g,cv);
+        drawShape(shape,g);
+      }
+    }
+    drawing=false;strokePoints=[];lastDrawn=null;
+  });
+  cv.addEventListener('pointerleave',()=>{drawing=false;strokePoints=[];lastDrawn=null;});
 }
 bindEvents(canvas,ctx);
 

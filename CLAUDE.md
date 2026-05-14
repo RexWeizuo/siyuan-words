@@ -55,9 +55,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **每次迁移板块前**：完整解释要做什么、为什么这样做、涉及哪些文件和概念，等用户确认再做
 - **解释方式**：用类比（已知解释未知），不假设用户懂 Go/CGO/编译器/协议细节
 - **做完后**：用 2-3 句话总结实际做了什么、学到了什么
-- **每日收尾**：
-  1. `git push` 到 GitHub 仓库 RexWeizuo/siyuan（或其他指定仓库）
-  2. 在 `/mnt/d/life_management/2026/` 当天日志末尾追加今日工作内容
+- **git 同步**：不在每次修改后手动 push。每晚 11 点 cron 自动提交并 push 当天所有修改到 GitHub
+- **每日收尾**：在 `/mnt/d/life_management/2026/` 当天日志末尾追加今日工作内容
 - **通过对话持续观察用户的知识水平**，更新 `[[user-cs-knowledge]]` memory
 
 ---
