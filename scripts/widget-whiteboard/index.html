@@ -6,50 +6,28 @@
 <style>
   :root { --bg: #1e1e1e; --surface: #2d2d2d; --text: #ccc; --border: #444; --accent: #3574f0; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body {
-    background: var(--bg); color: var(--text);
-    font-family: system-ui, sans-serif;
-    display: flex; flex-direction: column; height: 100vh; overflow: hidden;
-    user-select: none; -webkit-user-select: none;
-  }
-  #toolbar {
-    display: flex; align-items: center; gap: 6px;
-    padding: 6px 10px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--border);
-    flex-wrap: wrap;
-  }
-  #toolbar button {
-    background: transparent; border: 1px solid var(--border); color: var(--text);
-    padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px;
-    white-space: nowrap;
-  }
+  body { background: var(--bg); color: var(--text); font-family: system-ui, sans-serif; display: flex; flex-direction: column; height: 100vh; overflow: hidden; user-select: none; -webkit-user-select: none; }
+  #toolbar { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  #toolbar button { background: transparent; border: 1px solid var(--border); color: var(--text); padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 13px; }
   #toolbar button.active { background: var(--accent); border-color: var(--accent); }
   #toolbar button:hover { opacity: 0.8; }
   #toolbar .sep { width: 1px; height: 20px; background: var(--border); margin: 0 4px; }
   #toolbar input[type="range"] { width: 60px; cursor: pointer; }
   #toolbar .hint { font-size: 11px; color: #888; margin-left: auto; }
-  /* color swatches */
-  .swatch {
-    width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent;
-    cursor: pointer; flex-shrink: 0;
-  }
+  .swatch { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
   .swatch.active { border-color: #fff; box-shadow: 0 0 4px rgba(255,255,255,0.5); }
   #canvas-wrap { flex: 1; position: relative; overflow: hidden; }
   canvas { position: absolute; top: 0; left: 0; touch-action: none; }
 
-  /* custom cursors — SVG data URIs */
-  .cursor-pen { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M3 15l1-4 3 3zM5 10L14 1l3 3-9 9z' fill='white' stroke='black' stroke-width='0.8'/%3E%3C/svg%3E") 2 17, crosshair; }
-  .cursor-pen canvas { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='18' height='18' viewBox='0 0 18 18'%3E%3Cpath d='M3 15l1-4 3 3zM5 10L14 1l3 3-9 9z' fill='white' stroke='black' stroke-width='0.8'/%3E%3C/svg%3E") 2 17, crosshair; }
-  .cursor-eraser { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Crect x='3' y='5' width='14' height='8' rx='2' fill='%23ff6b6b' stroke='white' stroke-width='0.8' transform='rotate(-15 10 9)'/%3E%3C/svg%3E") 10 10, cell; }
-  .cursor-eraser canvas { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'%3E%3Crect x='3' y='5' width='14' height='8' rx='2' fill='%23ff6b6b' stroke='white' stroke-width='0.8' transform='rotate(-15 10 9)'/%3E%3C/svg%3E") 10 10, cell; }
+  .pen-cursor, .pen-cursor canvas, .pen-cursor > * { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='22' viewBox='0 0 16 22'%3E%3Cpath d='M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z' fill='white' stroke='black' stroke-width='0.6'/%3E%3C/svg%3E") 2 20, crosshair !important; }
+  .eraser-cursor, .eraser-cursor canvas, .eraser-cursor > * { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='22' height='16' viewBox='0 0 22 16'%3E%3Crect x='3' y='2' width='16' height='8' rx='2' fill='white' stroke='black' stroke-width='0.6' transform='rotate(-10 11 6)'/%3E%3C/svg%3E") 11 8, cell !important; }
 </style>
 </head>
-<body class="cursor-pen">
+<body class="pen-cursor">
 
 <div id="toolbar">
-  <button id="btn-pen" class="active"><svg width="14" height="14" viewBox="0 0 18 18" style="vertical-align:middle"><path d="M3 15l1-4 3 3zM5 10L14 1l3 3-9 9z" fill="currentColor" stroke="currentColor" stroke-width="0.8"/></svg> 笔</button>
-  <button id="btn-eraser"><svg width="14" height="14" viewBox="0 0 20 20" style="vertical-align:middle"><rect x="3" y="5" width="14" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" transform="rotate(-15 10 9)"/></svg> 橡皮</button>
+  <button id="btn-pen" class="active"><svg width="14" height="14" viewBox="0 0 16 22"><path d="M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z" fill="currentColor" stroke="currentColor" stroke-width="0.6"/></svg> 笔</button>
+  <button id="btn-eraser"><svg width="14" height="14" viewBox="0 0 22 16"><rect x="3" y="2" width="16" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.2" transform="rotate(-10 11 6)"/></svg> 橡皮</button>
   <span class="sep"></span>
   <span id="swatches" style="display:flex;align-items:center;gap:4px"></span>
   <span class="sep"></span>
@@ -61,446 +39,322 @@
   <button id="btn-clear">清空</button>
   <button id="btn-fullscreen">全屏</button>
   <button id="btn-save">保存</button>
-  <span class="hint">笔触: <span id="pressure-hint">-</span></span>
+  <span class="hint">压感: <span id="pressure-hint">-</span></span>
 </div>
 
 <div id="canvas-wrap"><canvas id="c"></canvas></div>
 <div style="position:fixed;bottom:4px;right:6px;font-size:10px;color:#555;pointer-events:none;z-index:1">v2</div>
 
 <script>
+const P = window.parent;
+const PD = P.document;
+const COLORS = ['#ffffff','#ffd43b','#69db7c','#4dabf7','#ff6b6b','#e599f7','#ff922b'];
+let color = COLORS[0], tool = 'pen', penSize = 1.2, eraserSize = 10;
+
+const undoStack = [], MAX_UNDO = 50;
+let drawing = false, strokePoints = [];
+
 const wrap = document.getElementById('canvas-wrap');
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-
-const P = window.parent;
-const PD = P.document;
-
-const COLORS = ['#ffffff','#ffd43b','#69db7c','#4dabf7','#ff6b6b','#e599f7','#ff922b'];
-let color = COLORS[0];
-let tool = 'pen';
-let penSize = 1.2;
-let eraserSize = 10;
-
-const undoStack = [];
-const MAX_UNDO = 50;
-let drawing = false;
-let strokePoints = [];
-
-// ---- color swatches ----
-function buildSwatches() {
-  const container = document.getElementById('swatches');
-  COLORS.forEach((c, i) => {
-    const s = document.createElement('div');
-    s.className = 'swatch' + (i === 0 ? ' active' : '');
-    s.style.background = c;
-    s.title = c;
-    s.addEventListener('click', () => {
-      color = c;
-      container.querySelectorAll('.swatch').forEach(el => el.classList.remove('active'));
-      s.classList.add('active');
-    });
-    container.appendChild(s);
-  });
-}
-buildSwatches();
-
-// ---- OneNote-style ink ----
-function inkWidth(pressure) {
-  return penSize * 2 * Math.pow(pressure, 0.55);
-}
-
-function smoothPoints(pts) {
-  if (pts.length < 3) return pts;
-  const out = [pts[0]];
-  for (let i = 1; i < pts.length - 1; i++) {
-    const w = Math.min(2, i, pts.length - 1 - i);
-    let sx=0, sy=0, sp=0, n=0;
-    for (let j=-w; j<=w; j++) { sx+=pts[i+j].x; sy+=pts[i+j].y; sp+=pts[i+j].p; n++; }
-    out.push({x:sx/n, y:sy/n, p:sp/n});
-  }
-  out.push(pts[pts.length-1]);
-  return out;
-}
-
-function drawInkStroke(pts, g) {
-  if (pts.length < 2) return;
-  const raw = smoothPoints(pts);
-  const segs = raw.map((pt, i) => {
-    const t = i / Math.max(raw.length - 1, 1);
-    const taper = Math.min(t / 0.15, (1 - t) / 0.15, 1);
-    return { ...pt, w: inkWidth(pt.p) * Math.max(taper, 0.2) };
-  });
-
-  g.fillStyle = color;
-  for (let i = 0; i < segs.length - 1; i++) {
-    const a = segs[i], b = segs[i+1];
-    const dx = b.x - a.x, dy = b.y - a.y;
-    const dist = Math.sqrt(dx*dx + dy*dy);
-    if (dist < 0.3) continue;
-    const nx = -dy / dist, ny = dx / dist;
-    g.beginPath();
-    g.moveTo(a.x + nx*a.w/2, a.y + ny*a.w/2);
-    g.lineTo(b.x + nx*b.w/2, b.y + ny*b.w/2);
-    g.lineTo(b.x - nx*b.w/2, b.y - ny*b.w/2);
-    g.lineTo(a.x - nx*a.w/2, a.y - ny*a.w/2);
-    g.closePath(); g.fill();
-  }
-  for (const pt of segs) {
-    g.beginPath(); g.arc(pt.x, pt.y, pt.w/2, 0, Math.PI*2); g.fill();
-  }
-}
-
-// ---- shape detection ----
-function detectShape(pts) {
-  if (pts.length < 5) return null;
-
-  // down-sample to reduce computation
-  const step = Math.max(1, Math.floor(pts.length / 40));
-  const sampled = pts.filter((_, i) => i % step === 0);
-  if (sampled.length < 5) return null;
-
-  // --- line detection ---
-  const sx = sampled[0].x, sy = sampled[0].y;
-  const ex = sampled[sampled.length-1].x, ey = sampled[sampled.length-1].y;
-  const lineDist = Math.hypot(ex - sx, ey - sy);
-
-  if (lineDist > 30) { // only detect lines longer than 30px
-    // max perpendicular deviation from the straight line
-    let maxDev = 0;
-    const dx = ex - sx, dy = ey - sy;
-    const lenSq = dx*dx + dy*dy;
-    for (const pt of sampled) {
-      const t = ((pt.x - sx)*dx + (pt.y - sy)*dy) / lenSq;
-      const projX = sx + t*dx, projY = sy + t*dy;
-      const dev = Math.hypot(pt.x - projX, pt.y - projY);
-      if (dev > maxDev) maxDev = dev;
-    }
-    // path length vs straight-line ratio
-    let pathLen = 0;
-    for (let i = 1; i < sampled.length; i++) {
-      pathLen += Math.hypot(sampled[i].x - sampled[i-1].x, sampled[i].y - sampled[i-1].y);
-    }
-    // is a line if: deviation < 10% of length AND path/straight ratio < 1.3
-    if (maxDev < lineDist * 0.12 && pathLen / lineDist < 1.3) {
-      return { type: 'line', x1: sx, y1: sy, x2: ex, y2: ey };
-    }
-  }
-
-  // --- circle/ellipse detection ---
-  const n = sampled.length;
-  // center of bounding box
-  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
-  for (const pt of sampled) {
-    if (pt.x < minX) minX = pt.x; if (pt.y < minY) minY = pt.y;
-    if (pt.x > maxX) maxX = pt.x; if (pt.y > maxY) maxY = pt.y;
-  }
-  const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
-  const rx = (maxX - minX) / 2, ry = (maxY - minY) / 2;
-  const avgR = (rx + ry) / 2;
-
-  if (avgR < 15) return null; // too small
-
-  // check if points are roughly circular
-  let maxRadDev = 0;
-  for (const pt of sampled) {
-    const dist = Math.hypot(pt.x - cx, pt.y - cy);
-    const dev = Math.abs(dist - avgR);
-    if (dev > maxRadDev) maxRadDev = dev;
-  }
-  // must be roughly closed (start near end)
-  const closureDist = Math.hypot(sampled[0].x - sampled[n-1].x, sampled[0].y - sampled[n-1].y);
-  const circumference = 2 * Math.PI * avgR;
-
-  if (maxRadDev < avgR * 0.3 && closureDist < avgR * 0.5 && n >= 8) {
-    return { type: 'circle', cx, cy, r: avgR };
-  }
-
-  return null;
-}
-
-function drawPerfectLine(x1, y1, x2, y2, g) {
-  const w = inkWidth(0.5); // moderate width
-  g.fillStyle = color;
-  g.strokeStyle = color;
-  g.lineWidth = w;
-  g.lineCap = 'round';
-  g.beginPath();
-  g.moveTo(x1, y1);
-  g.lineTo(x2, y2);
-  g.stroke();
-  // rounded caps
-  g.beginPath(); g.arc(x1, y1, w/2, 0, Math.PI*2); g.fill();
-  g.beginPath(); g.arc(x2, y2, w/2, 0, Math.PI*2); g.fill();
-}
-
-function drawPerfectCircle(cx, cy, r, g) {
-  const w = inkWidth(0.5);
-  g.strokeStyle = color;
-  g.lineWidth = w;
-  g.lineCap = 'round';
-  g.beginPath();
-  g.arc(cx, cy, r, 0, Math.PI * 2);
-  g.stroke();
-}
 
 function resizeCanvas(cv, parent) {
   const r = parent.getBoundingClientRect();
   const dpr = P.devicePixelRatio || 1;
   const w = r.width, h = r.height;
-  cv.style.width = w + 'px';
-  cv.style.height = h + 'px';
-  cv.width = w * dpr;
-  cv.height = h * dpr;
+  cv.style.width = w + 'px'; cv.style.height = h + 'px';
+  cv.width = w * dpr; cv.height = h * dpr;
   const g = cv.getContext('2d');
-  g.setTransform(1, 0, 0, 1, 0, 0);
-  g.scale(dpr, dpr);
+  g.setTransform(1, 0, 0, 1, 0, 0); g.scale(dpr, dpr);
 }
+resizeCanvas(canvas, wrap);
+window.addEventListener('resize', () => resizeCanvas(canvas, wrap));
 
-function resize() { resizeCanvas(canvas, wrap); }
-resize();
-window.addEventListener('resize', resize);
+// ---- ink engine (light & fast) ----
+function inkW(p) { return penSize * Math.pow(p || 0.5, 0.55) * 2.2; }
 
-// ---- fullscreen ----
-let parentOverlay = null;
-let parentCanvas = null;
-let autoSaveTimer = null;
-
-function getActiveCanvas() { return parentCanvas || canvas; }
-function getActiveCtx() { return getActiveCanvas().getContext('2d'); }
-
-const SWATCH_HTML = COLORS.map((c, i) =>
-  `<div class="sdf-swatch" data-color="${c}" style="width:22px;height:22px;border-radius:50%;border:2px solid ${i===0?'#fff':'transparent'};background:${c};cursor:pointer;flex-shrink:0;box-shadow:${i===0?'0 0 4px rgba(255,255,255,0.5)':'none'}"></div>`
-).join('');
-
-const TOOLBAR_HTML = `
-<div id="siyuan-draw-fs-tb" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:#2d2d2d;border-bottom:1px solid #444;flex-wrap:wrap;flex-shrink:0;">
-  <button id="sdf-btn-pen" class="sdf-active" style="background:#3574f0;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;"><svg width="14" height="14" viewBox="0 0 18 18" style="vertical-align:middle"><path d="M3 15l1-4 3 3zM5 10L14 1l3 3-9 9z" fill="currentColor" stroke="currentColor" stroke-width="0.8"/></svg> 笔</button>
-  <button id="sdf-btn-eraser" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;"><svg width="14" height="14" viewBox="0 0 20 20" style="vertical-align:middle"><rect x="3" y="5" width="14" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.5" transform="rotate(-15 10 9)"/></svg> 橡皮</button>
-  <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
-  <span id="sdf-swatches" style="display:flex;align-items:center;gap:4px">${SWATCH_HTML}</span>
-  <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
-  <span style="font-size:12px;color:#ccc">粗细</span>
-  <input type="range" id="sdf-size" min="0.3" max="6" value="${penSize}" step="0.1" style="width:60px;cursor:pointer">
-  <span id="sdf-size-val" style="font-size:12px;color:#ccc;min-width:24px">${penSize}</span>
-  <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
-  <button id="sdf-btn-undo" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">撤销</button>
-  <button id="sdf-btn-clear" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">清空</button>
-  <button id="sdf-btn-exit" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">退出</button>
-  <button id="sdf-btn-save" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">保存</button>
-  <span id="sdf-pressure" style="font-size:11px;color:#888;margin-left:auto">笔触: -</span>
-</div>`;
-
-function syncToEmbedded() {
-  // copy fullscreen canvas content back to embedded canvas
-  if (!parentCanvas) return;
-  resizeCanvas(canvas, wrap);
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(parentCanvas, 0, 0);
-}
-
-function enterFullscreen() {
-  parentOverlay = PD.createElement('div');
-  parentOverlay.id = 'siyuan-draw-fs';
-  parentOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#1e1e1e;display:flex;flex-direction:column;';
-  parentOverlay.innerHTML = TOOLBAR_HTML + '<div id="siyuan-draw-fs-wrap" style="flex:1;position:relative;overflow:hidden"><canvas id="siyuan-draw-fs-cv" style="position:absolute;top:0;left:0;touch-action:none"></canvas></div>';
-  PD.body.appendChild(parentOverlay);
-  parentCanvas = PD.getElementById('siyuan-draw-fs-cv');
-  const pw = PD.getElementById('siyuan-draw-fs-wrap');
-  pw.className = 'cursor-pen';
-  resizeCanvas(parentCanvas, pw);
-  parentCanvas.getContext('2d').drawImage(canvas, 0, 0);
-  bindFullscreenEvents(pw, parentCanvas);
-  updateFullscreenToolUI();
-  document.getElementById('btn-fullscreen').textContent = '退出';
-  document.getElementById('btn-fullscreen').classList.add('active');
-  // auto-save every 5s
-  autoSaveTimer = setInterval(syncToEmbedded, 5000);
-  window.addEventListener('resize', onParentResize);
-}
-
-function exitFullscreen() {
-  clearInterval(autoSaveTimer);
-  syncToEmbedded();
-  window.removeEventListener('resize', onParentResize);
-  PD.body.removeChild(parentOverlay);
-  parentCanvas = null; parentOverlay = null;
-  document.getElementById('btn-fullscreen').textContent = '全屏';
-  document.getElementById('btn-fullscreen').classList.remove('active');
-}
-
-function onParentResize() {
-  if (!parentCanvas) return;
-  syncToEmbedded();
-  resizeCanvas(parentCanvas, PD.getElementById('siyuan-draw-fs-wrap'));
-  parentCanvas.getContext('2d').drawImage(canvas, 0, 0);
-}
-
-function updateFullscreenToolUI() {
-  const penBtn = PD.getElementById('sdf-btn-pen');
-  const eraserBtn = PD.getElementById('sdf-btn-eraser');
-  const pw = PD.getElementById('siyuan-draw-fs-wrap');
-  if (tool === 'eraser') {
-    eraserBtn.style.background = '#3574f0'; penBtn.style.background = 'transparent';
-    pw.className = 'cursor-eraser';
-  } else {
-    penBtn.style.background = '#3574f0'; eraserBtn.style.background = 'transparent';
-    pw.className = 'cursor-pen';
+function drawInkStroke(pts, g) {
+  if (pts.length < 2) return;
+  // simple moving average smoothing
+  const s = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    s.push({x:(pts[i-1].x+pts[i].x+pts[i+1].x)/3, y:(pts[i-1].y+pts[i].y+pts[i+1].y)/3, p:(pts[i-1].p+pts[i].p+pts[i+1].p)/3});
   }
-  PD.getElementById('sdf-size').value = (tool === 'eraser') ? eraserSize : penSize;
-  PD.getElementById('sdf-size-val').textContent = (tool === 'eraser') ? eraserSize : penSize;
+  s.push(pts[pts.length-1]);
+  const n = s.length;
+
+  g.fillStyle = color; g.strokeStyle = color;
+  g.lineCap = 'round'; g.lineJoin = 'round';
+
+  // draw thick path
+  g.beginPath(); g.moveTo(s[0].x, s[0].y);
+  for (let i=1; i<n; i++) g.lineTo(s[i].x, s[i].y);
+  const midP = s[Math.floor(n/2)].p;
+  g.lineWidth = inkW(midP);
+  g.stroke();
+
+  // taper caps
+  g.beginPath(); g.arc(s[0].x, s[0].y, inkW(s[0].p)/2, 0, Math.PI*2); g.fill();
+  g.beginPath(); g.arc(s[n-1].x, s[n-1].y, inkW(s[n-1].p)/2, 0, Math.PI*2); g.fill();
 }
 
-function bindFullscreenEvents(pw, pcv) {
-  PD.getElementById('sdf-btn-pen').addEventListener('click', () => { tool='pen'; updateFullscreenToolUI(); });
-  PD.getElementById('sdf-btn-eraser').addEventListener('click', () => { tool='eraser'; updateFullscreenToolUI(); });
+// ---- shape detection ----
+function detectShape(pts) {
+  if (pts.length < 5) return null;
+  const step = Math.max(1, Math.floor(pts.length / 40));
+  const sp = pts.filter((_, i) => i % step === 0);
+  if (sp.length < 5) return null;
 
-  // color swatches in fullscreen
-  PD.getElementById('sdf-swatches').addEventListener('click', (e) => {
-    const sw = e.target.closest('.sdf-swatch');
-    if (!sw) return;
-    color = sw.dataset.color;
-    PD.querySelectorAll('.sdf-swatch').forEach(el => {
-      el.style.borderColor = 'transparent';
-      el.style.boxShadow = 'none';
-    });
-    sw.style.borderColor = '#fff';
-    sw.style.boxShadow = '0 0 4px rgba(255,255,255,0.5)';
-  });
-
-  PD.getElementById('sdf-size').addEventListener('input', (e) => {
-    const v = parseFloat(e.target.value);
-    if (tool === 'eraser') eraserSize = v; else penSize = v;
-    PD.getElementById('sdf-size-val').textContent = v;
-  });
-  PD.getElementById('sdf-btn-undo').addEventListener('click', undoSnapshot);
-  PD.getElementById('sdf-btn-clear').addEventListener('click', clearAll);
-  PD.getElementById('sdf-btn-exit').addEventListener('click', exitFullscreen);
-  PD.getElementById('sdf-btn-save').addEventListener('click', savePNG);
-
-  bindCanvasEvents(pcv, pw, PD.getElementById('sdf-pressure'), pcv.getContext('2d'));
-}
-
-// ---- shared canvas events ----
-function bindCanvasEvents(cv, parent, pressHint, g) {
-  function getPos(e) {
-    const r = cv.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure || 0.5 };
+  // line
+  const sx=sp[0].x, sy=sp[0].y, ex=sp[sp.length-1].x, ey=sp[sp.length-1].y;
+  const lineDist = Math.hypot(ex-sx, ey-sy);
+  if (lineDist > 30) {
+    let maxDev=0, pathLen=0;
+    const dx=ex-sx, dy=ey-sy, lenSq=dx*dx+dy*dy;
+    for (const p of sp) maxDev = Math.max(maxDev, Math.hypot(p.x-(sx+((p.x-sx)*dx+(p.y-sy)*dy)/lenSq*dx), p.y-(sy+((p.x-sx)*dx+(p.y-sy)*dy)/lenSq*dy)));
+    for (let i=1; i<sp.length; i++) pathLen += Math.hypot(sp[i].x-sp[i-1].x, sp[i].y-sp[i-1].y);
+    if (maxDev < lineDist*0.12 && pathLen/lineDist < 1.3) return {type:'line', x1:sx, y1:sy, x2:ex, y2:ey};
   }
+
+  // circle
+  let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+  for (const p of sp) { if(p.x<minX)minX=p.x; if(p.y<minY)minY=p.y; if(p.x>maxX)maxX=p.x; if(p.y>maxY)maxY=p.y; }
+  const cx=(minX+maxX)/2, cy=(minY+maxY)/2, rx=(maxX-minX)/2, ry=(maxY-minY)/2, avgR=(rx+ry)/2;
+  if (avgR < 15) return null;
+  let maxRadDev=0;
+  for (const p of sp) maxRadDev = Math.max(maxRadDev, Math.abs(Math.hypot(p.x-cx, p.y-cy)-avgR));
+  const closure = Math.hypot(sp[0].x-sp[sp.length-1].x, sp[0].y-sp[sp.length-1].y);
+  if (maxRadDev < avgR*0.3 && closure < avgR*0.5 && sp.length >= 8) return {type:'circle', cx, cy, r:avgR};
+  return null;
+}
+
+function drawPerfectLine(x1,y1,x2,y2,g) {
+  const w=inkW(0.5); g.strokeStyle=color; g.lineWidth=w; g.lineCap='round';
+  g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke();
+  g.fillStyle=color; g.beginPath(); g.arc(x1,y1,w/2,0,Math.PI*2); g.fill();
+  g.beginPath(); g.arc(x2,y2,w/2,0,Math.PI*2); g.fill();
+}
+function drawPerfectCircle(cx,cy,r,g) {
+  const w=inkW(0.5); g.strokeStyle=color; g.lineWidth=w;
+  g.beginPath(); g.arc(cx,cy,r,0,Math.PI*2); g.stroke();
+}
+
+// ---- undo ----
+function snapshot(g, cv) { if(undoStack.length>=MAX_UNDO)undoStack.shift(); undoStack.push(g.getImageData(0,0,cv.width,cv.height)); }
+function undoOp(g, cv) { if(!undoStack.length)return; g.putImageData(undoStack.pop(),0,0); }
+
+function clearCanvas(g, cv) { snapshot(g, cv); g.clearRect(0, 0, cv.width, cv.height); }
+
+// ---- bind pointer events to a canvas ----
+function bindEvents(cv, parent, g) {
+  function getPos(e) { const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top, p:e.pressure||0.5}; }
 
   cv.addEventListener('pointerdown', (e) => {
-    drawing = true; strokePoints = [getPos(e)];
-    pressHint.textContent = strokePoints[0].p.toFixed(2);
-    snapshot();
-    if (tool === 'eraser') {
-      g.globalCompositeOperation = 'destination-out';
-      g.fillStyle = 'rgba(0,0,0,1)';
+    drawing=true; strokePoints=[getPos(e)];
+    document.getElementById('pressure-hint').textContent = strokePoints[0].p.toFixed(2);
+    snapshot(g, cv);
+    if(tool==='eraser') {
+      g.globalCompositeOperation='destination-out'; g.fillStyle='rgba(0,0,0,1)';
       g.beginPath(); g.arc(strokePoints[0].x, strokePoints[0].y, eraserSize/2, 0, Math.PI*2); g.fill();
-      g.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation='source-over';
     } else {
-      const w = inkWidth(strokePoints[0].p);
-      g.fillStyle = color;
+      g.fillStyle=color; const w=inkW(strokePoints[0].p);
       g.beginPath(); g.arc(strokePoints[0].x, strokePoints[0].y, w/2, 0, Math.PI*2); g.fill();
     }
   });
 
   cv.addEventListener('pointermove', (e) => {
-    if (!drawing) return;
-    const p = getPos(e);
-    pressHint.textContent = p.p.toFixed(2);
+    if(!drawing)return;
+    const p=getPos(e); document.getElementById('pressure-hint').textContent=p.p.toFixed(2);
     strokePoints.push(p);
-    if (tool === 'eraser') {
-      g.globalCompositeOperation = 'destination-out';
+    if(tool==='eraser') {
+      g.globalCompositeOperation='destination-out'; g.fillStyle='rgba(0,0,0,1)';
       g.beginPath(); g.arc(p.x, p.y, eraserSize/2, 0, Math.PI*2); g.fill();
-      g.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation='source-over';
     }
   });
 
   cv.addEventListener('pointerup', () => {
-    if (!drawing) return;
-    if (tool === 'pen' && strokePoints.length >= 2) {
-      // save state before drawing
-      const cv = getActiveCanvas();
-      const preImg = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height);
+    if(!drawing)return;
+    if(tool==='pen' && strokePoints.length>=2) {
+      const preImg = g.getImageData(0, 0, cv.width, cv.height);
       drawInkStroke(strokePoints, g);
-      // detect shape
       const shape = detectShape(strokePoints);
-      if (shape) {
-        // restore & draw perfect shape
-        cv.getContext('2d').putImageData(preImg, 0, 0);
-        if (shape.type === 'line') drawPerfectLine(shape.x1, shape.y1, shape.x2, shape.y2, g);
-        else if (shape.type === 'circle') drawPerfectCircle(shape.cx, shape.cy, shape.r, g);
+      if(shape) {
+        g.putImageData(preImg, 0, 0);
+        if(shape.type==='line') drawPerfectLine(shape.x1, shape.y1, shape.x2, shape.y2, g);
+        else drawPerfectCircle(shape.cx, shape.cy, shape.r, g);
       }
     }
-    drawing = false; strokePoints = [];
-    if (parentOverlay) syncToEmbedded();
+    drawing=false; strokePoints=[];
   });
-  cv.addEventListener('pointerleave', () => { drawing = false; strokePoints = []; });
+  cv.addEventListener('pointerleave', () => { drawing=false; strokePoints=[]; });
 }
 
-bindCanvasEvents(canvas, wrap, document.getElementById('pressure-hint'), ctx);
+bindEvents(canvas, wrap, ctx);
 
-// ---- drawing ops ----
-function snapshot() {
-  const cv = getActiveCanvas();
-  const c = cv.getContext('2d');
-  if (undoStack.length >= MAX_UNDO) undoStack.shift();
-  undoStack.push(c.getImageData(0, 0, cv.width, cv.height));
-}
-function undoSnapshot() {
-  if (undoStack.length === 0) return;
-  const cv = getActiveCanvas();
-  cv.getContext('2d').putImageData(undoStack.pop(), 0, 0);
-  if (parentOverlay) syncToEmbedded();
-}
-function clearAll() {
-  snapshot();
-  const cv = getActiveCanvas();
-  const c = cv.getContext('2d');
-  c.clearRect(0, 0, cv.width, cv.height);
-  if (parentOverlay) syncToEmbedded();
+// ---- fullscreen (parent DOM overlay with its own canvas) ----
+let fsOverlay = null, fsCanvas = null, fsCtx = null;
+
+function _makeFS() {
+  const d = PD.createElement('div');
+  d.id = '_wb_fs';
+  d.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:2147483647;background:#1e1e1e;display:flex;flex-direction:column;';
+  d.className = tool === 'eraser' ? 'eraser-cursor' : 'pen-cursor';
+
+  const tb = PD.createElement('div');
+  tb.id = '_wb_fs_tb';
+  tb.style.cssText = 'display:flex;align-items:center;gap:6px;padding:8px 12px;background:#2d2d2d;border-bottom:1px solid #444;flex-wrap:wrap;flex-shrink:0;';
+  tb.innerHTML =
+    '<button id="_wb_fs_pen" class="_wb_active" style="background:#3574f0;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;"><svg width="14" height="14" viewBox="0 0 16 22"><path d="M2 20l2-6 3 3z M5 13L12 1l3 3-9 12z" fill="currentColor" stroke="currentColor" stroke-width="0.6"/></svg> 笔</button>' +
+    '<button id="_wb_fs_eraser" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;"><svg width="14" height="14" viewBox="0 0 22 16"><rect x="3" y="2" width="16" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.2" transform="rotate(-10 11 6)"/></svg> 橡皮</button>' +
+    '<span style="width:1px;height:20px;background:#444;margin:0 4px"></span>' +
+    COLORS.map((c,i) => `<span class="_wb_sw" data-c="${c}" style="display:inline-block;width:22px;height:22px;border-radius:50%;border:2px solid ${i===0?'#fff':'transparent'};background:${c};cursor:pointer;box-shadow:${i===0?'0 0 4px rgba(255,255,255,0.5)':'none'}"></span>`).join('') +
+    '<span style="width:1px;height:20px;background:#444;margin:0 4px"></span>' +
+    '<span style="font-size:12px;color:#ccc">粗细</span>' +
+    `<input type="range" id="_wb_fs_sz" min="0.3" max="6" value="${penSize}" step="0.1" style="width:60px;cursor:pointer">` +
+    `<span id="_wb_fs_szv" style="font-size:12px;color:#ccc;min-width:24px">${penSize}</span>` +
+    '<span style="width:1px;height:20px;background:#444;margin:0 4px"></span>' +
+    '<button id="_wb_fs_undo" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">撤销</button>' +
+    '<button id="_wb_fs_clear" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">清空</button>' +
+    '<button id="_wb_fs_exit" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">退出</button>' +
+    '<span id="_wb_fs_pr" style="font-size:11px;color:#888;margin-left:auto">压感: -</span>';
+
+  const wrapDiv = PD.createElement('div');
+  wrapDiv.id = '_wb_fs_wrap';
+  wrapDiv.style.cssText = 'flex:1;position:relative;overflow:hidden;';
+
+  const cv = PD.createElement('canvas');
+  cv.id = '_wb_fs_cv';
+  cv.style.cssText = 'position:absolute;top:0;left:0;touch-action:none;';
+
+  wrapDiv.appendChild(cv);
+  d.appendChild(tb);
+  d.appendChild(wrapDiv);
+
+  return { d, cv, wrapDiv, tb };
 }
 
-function savePNG() {
-  const cv = parentCanvas || canvas;
-  const l = document.createElement('a');
-  l.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
-  l.href = cv.toDataURL('image/png'); l.click();
+function enterFullscreen() {
+  const m = _makeFS();
+  fsOverlay = m.d; fsCanvas = m.cv;
+  PD.body.appendChild(fsOverlay);
+  resizeCanvas(fsCanvas, m.wrapDiv);
+  fsCtx = fsCanvas.getContext('2d');
+
+  // copy embedded canvas → fullscreen canvas
+  fsCtx.drawImage(canvas, 0, 0);
+
+  bindEvents(fsCanvas, m.wrapDiv, fsCtx);
+  bindFSToolbar();
+
+  document.getElementById('btn-fullscreen').textContent = '退出';
+  document.getElementById('btn-fullscreen').classList.add('active');
+  window.addEventListener('resize', onFSResize);
 }
 
-// ---- toolbar ----
-const sizeInput = document.getElementById('size');
-const sizeVal = document.getElementById('size-val');
-function updateSizeUI() {
-  document.body.className = tool === 'eraser' ? 'cursor-eraser' : 'cursor-pen';
-  if (tool === 'eraser') { sizeInput.value = eraserSize; sizeVal.textContent = eraserSize; }
-  else { sizeInput.value = penSize; sizeVal.textContent = penSize; }
+function exitFullscreen() {
+  // copy fullscreen canvas → embedded canvas (THIS IS THE SAVE)
+  resizeCanvas(canvas, wrap);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(fsCanvas, 0, 0);
+
+  window.removeEventListener('resize', onFSResize);
+  PD.body.removeChild(fsOverlay);
+  fsOverlay = null; fsCanvas = null; fsCtx = null;
+
+  document.getElementById('btn-fullscreen').textContent = '全屏';
+  document.getElementById('btn-fullscreen').classList.remove('active');
 }
 
-document.getElementById('btn-pen').addEventListener('click', function() {
-  tool='pen'; this.classList.add('active');
-  document.getElementById('btn-eraser').classList.remove('active');
-  updateSizeUI();
-});
-document.getElementById('btn-eraser').addEventListener('click', function() {
-  tool='eraser'; this.classList.add('active');
-  document.getElementById('btn-pen').classList.remove('active');
-  updateSizeUI();
-});
-sizeInput.addEventListener('input', (e) => {
-  const v = parseFloat(e.target.value);
-  if (tool === 'eraser') eraserSize = v; else penSize = v;
-  sizeVal.textContent = v;
-});
-document.getElementById('btn-undo').addEventListener('click', undoSnapshot);
-document.getElementById('btn-clear').addEventListener('click', clearAll);
+function onFSResize() {
+  if (!fsCanvas) return;
+  const w = PD.getElementById('_wb_fs_wrap');
+  resizeCanvas(fsCanvas, w);
+}
+
+function bindFSToolbar() {
+  const pen = PD.getElementById('_wb_fs_pen');
+  const eraser = PD.getElementById('_wb_fs_eraser');
+  const sz = PD.getElementById('_wb_fs_sz');
+  const szv = PD.getElementById('_wb_fs_szv');
+  const pr = PD.getElementById('_wb_fs_pr');
+
+  function updateFS() {
+    if (tool === 'eraser') {
+      eraser.style.background = '#3574f0'; pen.style.background = 'transparent';
+      sz.value = eraserSize; szv.textContent = eraserSize;
+      fsOverlay.className = 'eraser-cursor';
+    } else {
+      pen.style.background = '#3574f0'; eraser.style.background = 'transparent';
+      sz.value = penSize; szv.textContent = penSize;
+      fsOverlay.className = 'pen-cursor';
+    }
+  }
+  updateFS();
+
+  pen.addEventListener('click', () => { tool='pen'; updateFS(); });
+  eraser.addEventListener('click', () => { tool='eraser'; updateFS(); });
+
+  // color swatches
+  fsOverlay.addEventListener('click', (e) => {
+    const sw = e.target.closest('._wb_sw');
+    if (!sw) return;
+    color = sw.dataset.c;
+    fsOverlay.querySelectorAll('._wb_sw').forEach(el => { el.style.borderColor='transparent'; el.style.boxShadow='none'; });
+    sw.style.borderColor = '#fff'; sw.style.boxShadow = '0 0 4px rgba(255,255,255,0.5)';
+  });
+
+  sz.addEventListener('input', () => {
+    const v = parseFloat(sz.value);
+    if (tool === 'eraser') eraserSize = v; else penSize = v;
+    szv.textContent = v;
+  });
+
+  PD.getElementById('_wb_fs_undo').addEventListener('click', () => undoOp(fsCtx, fsCanvas));
+  PD.getElementById('_wb_fs_clear').addEventListener('click', () => clearCanvas(fsCtx, fsCanvas));
+  PD.getElementById('_wb_fs_exit').addEventListener('click', exitFullscreen);
+
+  // Override getPos for fullscreen canvas via closure in bindEvents
+}
+
 document.getElementById('btn-fullscreen').addEventListener('click', () => {
-  if (parentOverlay) exitFullscreen(); else enterFullscreen();
+  if (fsOverlay) exitFullscreen(); else enterFullscreen();
 });
-document.getElementById('btn-save').addEventListener('click', savePNG);
 
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && parentOverlay) { e.preventDefault(); exitFullscreen(); }
-  if (e.ctrlKey && e.key === 'z' && !e.target.closest('input')) { e.preventDefault(); undoSnapshot(); }
+  if (e.key === 'Escape' && fsOverlay) { e.preventDefault(); exitFullscreen(); }
+  if (e.ctrlKey && e.key === 'z' && !e.target.closest('input')) {
+    e.preventDefault();
+    if (fsCtx) undoOp(fsCtx, fsCanvas); else undoOp(ctx, canvas);
+  }
+});
+
+// ---- toolbar ----
+const swatchContainer = document.getElementById('swatches');
+COLORS.forEach((c, i) => {
+  const s = document.createElement('div');
+  s.className = 'swatch' + (i === 0 ? ' active' : '');
+  s.style.background = c;
+  s.addEventListener('click', () => { color=c; swatchContainer.querySelectorAll('.swatch').forEach(el=>el.classList.remove('active')); s.classList.add('active'); });
+  swatchContainer.appendChild(s);
+});
+
+const sizeInput = document.getElementById('size'), sizeVal = document.getElementById('size-val');
+function updateUI() {
+  document.body.className = tool === 'eraser' ? 'eraser-cursor' : 'pen-cursor';
+  if (tool==='eraser') { sizeInput.value=eraserSize; sizeVal.textContent=eraserSize; }
+  else { sizeInput.value=penSize; sizeVal.textContent=penSize; }
+}
+
+document.getElementById('btn-pen').addEventListener('click', () => { tool='pen'; document.getElementById('btn-pen').classList.add('active'); document.getElementById('btn-eraser').classList.remove('active'); updateUI(); });
+document.getElementById('btn-eraser').addEventListener('click', () => { tool='eraser'; document.getElementById('btn-eraser').classList.add('active'); document.getElementById('btn-pen').classList.remove('active'); updateUI(); });
+sizeInput.addEventListener('input', (e) => { const v=parseFloat(e.target.value); if(tool==='eraser')eraserSize=v; else penSize=v; sizeVal.textContent=v; });
+document.getElementById('btn-undo').addEventListener('click', () => undoOp(ctx, canvas));
+document.getElementById('btn-clear').addEventListener('click', () => clearCanvas(ctx, canvas));
+document.getElementById('btn-save').addEventListener('click', () => {
+  const cv = fsCanvas || canvas;
+  const l = document.createElement('a'); l.download='drawing-'+new Date().toISOString().slice(0,19).replace(/:/g,'-')+'.png'; l.href=cv.toDataURL('image/png'); l.click();
 });
 </script>
 </body>
