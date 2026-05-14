@@ -1,0 +1,13 @@
+{
+  "name": "whiteboard",
+  "displayName": {
+    "en_US": "Whiteboard v2",
+    "zh_CN": "手写画板 v2"
+  },
+  "description": {
+    "zh_CN": "OneNote 风格手写画板，支持压感笔触、形状修正、全屏书写"
+  },
+  "version": "2.0.0",
+  "author": "RexWeizuo",
+  "keywords": ["draw", "whiteboard", "canvas", "画板", "手写"]
+}
