@@ -45,8 +45,8 @@
   <span class="sep"></span>
   <input type="color" id="color" value="#ffffff">
   <span style="font-size:12px">粗细</span>
-  <input type="range" id="size" min="0.5" max="20" value="2.5" step="0.5">
-  <span id="size-val" style="font-size:12px;min-width:24px">2.5</span>
+  <input type="range" id="size" min="0.3" max="6" value="1.2" step="0.1">
+  <span id="size-val" style="font-size:12px;min-width:24px">1.2</span>
   <span class="sep"></span>
   <button id="btn-undo">撤销</button>
   <button id="btn-clear">清空</button>
@@ -62,19 +62,98 @@ const wrap = document.getElementById('canvas-wrap');
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
-// parent document
 const P = window.parent;
 const PD = P.document;
 
 let tool = 'pen';
 let color = '#ffffff';
-let penSize = 2.5;
+let penSize = 1.2;
 let eraserSize = 10;
 
 const undoStack = [];
 const MAX_UNDO = 50;
 let drawing = false;
-let currentPath = [];
+let strokePoints = []; // collected points for current stroke
+
+// ---- OneNote-style inking ----
+// Non-linear pressure curve: gives more control in the light range
+// pow(0.55) compresses high pressure slightly, expands mid-range
+function inkWidth(pressure) {
+  const p = Math.pow(pressure, 0.55);
+  return penSize * 2 * p;
+}
+
+// Smooth a point array with a simple moving average (reduces jitter)
+function smoothPoints(pts, windowSize) {
+  if (pts.length < 3) return pts;
+  const out = [pts[0]];
+  for (let i = 1; i < pts.length - 1; i++) {
+    const len = Math.min(windowSize, i + 1, pts.length - i);
+    let sx = 0, sy = 0, sp = 0, n = 0;
+    for (let j = -Math.floor(len/2); j <= Math.floor(len/2); j++) {
+      sx += pts[i+j].x; sy += pts[i+j].y; sp += pts[i+j].p; n++;
+    }
+    out.push({ x: sx/n, y: sy/n, p: sp/n });
+  }
+  out.push(pts[pts.length-1]);
+  return out;
+}
+
+// Draw the stroke with variable width — tapered ends, smooth transitions
+function drawInkStroke(pts, g) {
+  if (pts.length < 2) return;
+
+  // Smooth raw points
+  const raw = smoothPoints(pts, 3);
+
+  // Build segments with widths
+  const segs = raw.map((pt, i) => {
+    let p = pt.p;
+    // Taper: first and last 15% of stroke fade in/out
+    const len = raw.length;
+    const t = i / Math.max(len - 1, 1);
+    const taper = Math.min(t / 0.15, (1 - t) / 0.15, 1);
+    const w = inkWidth(p) * Math.max(taper, 0.2);
+    return { ...pt, w };
+  });
+
+  // Draw using filled trapezoids between consecutive points
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.lineCap = 'round';
+  g.lineJoin = 'round';
+
+  // Draw the core path with varying width using overlapping circles + trapezoids
+  for (let i = 0; i < segs.length - 1; i++) {
+    const a = segs[i], b = segs[i+1];
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if (dist < 0.5) continue;
+
+    const nx = -dy / dist, ny = dx / dist;
+
+    // Trapezoid: (a-, a+, b+, b-)
+    const a1x = a.x + nx * a.w/2, a1y = a.y + ny * a.w/2;
+    const a2x = a.x - nx * a.w/2, a2y = a.y - ny * a.w/2;
+    const b1x = b.x + nx * b.w/2, b1y = b.y + ny * b.w/2;
+    const b2x = b.x - nx * b.w/2, b2y = b.y - ny * b.w/2;
+
+    g.beginPath();
+    g.moveTo(a1x, a1y);
+    g.lineTo(b1x, b1y);
+    g.lineTo(b2x, b2y);
+    g.lineTo(a2x, a2y);
+    g.closePath();
+    g.fill();
+  }
+
+  // Cap circle at each point for smooth joins
+  for (const pt of segs) {
+    g.beginPath();
+    g.arc(pt.x, pt.y, pt.w / 2, 0, Math.PI * 2);
+    g.fill();
+  }
+}
 
 function resizeCanvas(cv, parent) {
   const r = parent.getBoundingClientRect();
@@ -93,9 +172,8 @@ function resize() { resizeCanvas(canvas, wrap); }
 resize();
 window.addEventListener('resize', resize);
 
-// ---- fullscreen (in parent document) ----
+// ---- fullscreen (parent document) ----
 let parentOverlay = null;
-let parentToolbar = null;
 let parentCanvas = null;
 
 function getActiveCanvas() { return parentCanvas || canvas; }
@@ -103,12 +181,12 @@ function getActiveCtx() { return getActiveCanvas().getContext('2d'); }
 
 const TOOLBAR_HTML = `
 <div id="siyuan-draw-fs-tb" style="display:flex;align-items:center;gap:6px;padding:8px 12px;background:#2d2d2d;border-bottom:1px solid #444;flex-wrap:wrap;flex-shrink:0;">
-  <button id="sdf-btn-pen" class="sdf-active" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">笔</button>
+  <button id="sdf-btn-pen" class="sdf-active" style="background:#3574f0;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">笔</button>
   <button id="sdf-btn-eraser" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">橡皮</button>
   <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
   <input type="color" id="sdf-color" value="${color}" style="width:28px;height:28px;border:1px solid #444;border-radius:4px;cursor:pointer;background:transparent;padding:2px">
   <span style="font-size:12px;color:#ccc">粗细</span>
-  <input type="range" id="sdf-size" min="0.5" max="20" value="${penSize}" step="0.5" style="width:60px;cursor:pointer">
+  <input type="range" id="sdf-size" min="0.3" max="6" value="${penSize}" step="0.1" style="width:60px;cursor:pointer">
   <span id="sdf-size-val" style="font-size:12px;color:#ccc;min-width:24px">${penSize}</span>
   <span style="width:1px;height:20px;background:#444;margin:0 4px"></span>
   <button id="sdf-btn-undo" style="background:transparent;border:1px solid #444;color:#ccc;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:13px;">撤销</button>
@@ -119,45 +197,28 @@ const TOOLBAR_HTML = `
 </div>`;
 
 function enterFullscreen() {
-  // create overlay in parent
   parentOverlay = PD.createElement('div');
   parentOverlay.id = 'siyuan-draw-fs';
   parentOverlay.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;z-index:99999;background:#1e1e1e;display:flex;flex-direction:column;';
   parentOverlay.innerHTML = TOOLBAR_HTML + '<div id="siyuan-draw-fs-wrap" style="flex:1;position:relative;overflow:hidden;cursor:crosshair"><canvas id="siyuan-draw-fs-cv" style="position:absolute;top:0;left:0;touch-action:none"></canvas></div>';
   PD.body.appendChild(parentOverlay);
-
-  parentToolbar = PD.getElementById('siyuan-draw-fs-tb');
   parentCanvas = PD.getElementById('siyuan-draw-fs-cv');
   const pw = PD.getElementById('siyuan-draw-fs-wrap');
-
   resizeCanvas(parentCanvas, pw);
-
-  // copy drawing
-  const pctx = parentCanvas.getContext('2d');
-  pctx.drawImage(canvas, 0, 0);
-
+  parentCanvas.getContext('2d').drawImage(canvas, 0, 0);
   bindFullscreenEvents(pw, parentCanvas);
   updateFullscreenToolUI();
-
   document.getElementById('btn-fullscreen').textContent = '退出';
   document.getElementById('btn-fullscreen').classList.add('active');
-
   window.addEventListener('resize', onParentResize);
 }
 
 function exitFullscreen() {
-  // copy back
-  const pctx = parentCanvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(parentCanvas, 0, 0);
-
-  // cleanup
   window.removeEventListener('resize', onParentResize);
   PD.body.removeChild(parentOverlay);
-  parentOverlay = null;
-  parentToolbar = null;
-  parentCanvas = null;
-
+  parentCanvas = null; parentOverlay = null;
   resizeCanvas(canvas, wrap);
   document.getElementById('btn-fullscreen').textContent = '全屏';
   document.getElementById('btn-fullscreen').classList.remove('active');
@@ -165,137 +226,92 @@ function exitFullscreen() {
 
 function onParentResize() {
   if (!parentCanvas) return;
-  const pw = PD.getElementById('siyuan-draw-fs-wrap');
-  resizeCanvas(parentCanvas, pw);
+  resizeCanvas(parentCanvas, PD.getElementById('siyuan-draw-fs-wrap'));
 }
 
 function updateFullscreenToolUI() {
   const penBtn = PD.getElementById('sdf-btn-pen');
   const eraserBtn = PD.getElementById('sdf-btn-eraser');
-  const sizeInput = PD.getElementById('sdf-size');
-  const sizeVal = PD.getElementById('sdf-size-val');
   if (tool === 'eraser') {
-    eraserBtn.classList.add('sdf-active');
-    eraserBtn.style.background = '#3574f0';
-    penBtn.classList.remove('sdf-active');
-    penBtn.style.background = 'transparent';
-    sizeInput.value = eraserSize;
-    sizeVal.textContent = eraserSize;
+    eraserBtn.style.background = '#3574f0'; penBtn.style.background = 'transparent';
   } else {
-    penBtn.classList.add('sdf-active');
-    penBtn.style.background = '#3574f0';
-    eraserBtn.classList.remove('sdf-active');
-    eraserBtn.style.background = 'transparent';
-    sizeInput.value = penSize;
-    sizeVal.textContent = penSize;
+    penBtn.style.background = '#3574f0'; eraserBtn.style.background = 'transparent';
   }
+  PD.getElementById('sdf-size').value = (tool === 'eraser') ? eraserSize : penSize;
+  PD.getElementById('sdf-size-val').textContent = (tool === 'eraser') ? eraserSize : penSize;
 }
 
 function bindFullscreenEvents(pw, pcv) {
-  const penBtn = PD.getElementById('sdf-btn-pen');
-  const eraserBtn = PD.getElementById('sdf-btn-eraser');
-  const colorInp = PD.getElementById('sdf-color');
-  const sizeInp = PD.getElementById('sdf-size');
-  const sizeVal = PD.getElementById('sdf-size-val');
-  const undoBtn = PD.getElementById('sdf-btn-undo');
-  const clearBtn = PD.getElementById('sdf-btn-clear');
-  const exitBtn = PD.getElementById('sdf-btn-exit');
-  const saveBtn = PD.getElementById('sdf-btn-save');
-  const pressHint = PD.getElementById('sdf-pressure');
-
-  colorInp.addEventListener('input', (e) => color = e.target.value);
-
-  penBtn.addEventListener('click', () => {
-    tool = 'pen';
-    pw.style.cursor = 'crosshair';
-    updateFullscreenToolUI();
-  });
-  eraserBtn.addEventListener('click', () => {
-    tool = 'eraser';
-    pw.style.cursor = 'cell';
-    updateFullscreenToolUI();
-  });
-  sizeInp.addEventListener('input', (e) => {
+  PD.getElementById('sdf-btn-pen').addEventListener('click', () => { tool='pen'; pw.style.cursor='crosshair'; updateFullscreenToolUI(); });
+  PD.getElementById('sdf-btn-eraser').addEventListener('click', () => { tool='eraser'; pw.style.cursor='cell'; updateFullscreenToolUI(); });
+  PD.getElementById('sdf-color').addEventListener('input', (e) => color = e.target.value);
+  PD.getElementById('sdf-size').addEventListener('input', (e) => {
     const v = parseFloat(e.target.value);
     if (tool === 'eraser') eraserSize = v; else penSize = v;
-    sizeVal.textContent = v;
+    PD.getElementById('sdf-size-val').textContent = v;
   });
-  undoBtn.addEventListener('click', undoSnapshot);
-  clearBtn.addEventListener('click', clearAll);
-  exitBtn.addEventListener('click', exitFullscreen);
-  saveBtn.addEventListener('click', () => {
-    const link = PD.createElement('a');
-    link.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
-    link.href = pcv.toDataURL('image/png');
-    link.click();
+  PD.getElementById('sdf-btn-undo').addEventListener('click', undoSnapshot);
+  PD.getElementById('sdf-btn-clear').addEventListener('click', clearAll);
+  PD.getElementById('sdf-btn-exit').addEventListener('click', exitFullscreen);
+  PD.getElementById('sdf-btn-save').addEventListener('click', () => {
+    const l = PD.createElement('a');
+    l.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
+    l.href = pcv.toDataURL('image/png'); l.click();
   });
 
-  // pointer events
-  const pctx = pcv.getContext('2d');
+  const pressHint = PD.getElementById('sdf-pressure');
+  bindCanvasEvents(pcv, pw, pressHint, pcv.getContext('2d'));
+}
 
+// ---- shared canvas event binding ----
+function bindCanvasEvents(cv, parent, pressHint, g) {
   function getPos(e) {
-    const r = pcv.getBoundingClientRect();
-    return { x: e.clientX - r.left, y: e.clientY - r.top, pressure: e.pressure || 0.5 };
+    const r = cv.getBoundingClientRect();
+    return { x: e.clientX - r.left, y: e.clientY - r.top, p: e.pressure || 0.5, t: Date.now() };
   }
 
-  pcv.addEventListener('pointerdown', (e) => {
-    drawing = true;
-    const p = getPos(e);
-    pressHint.textContent = p.pressure.toFixed(2);
+  cv.addEventListener('pointerdown', (e) => {
+    drawing = true; strokePoints = [getPos(e)];
+    pressHint.textContent = strokePoints[0].p.toFixed(2);
     snapshot();
-
     if (tool === 'eraser') {
-      pctx.globalCompositeOperation = 'destination-out';
-      pctx.fillStyle = 'rgba(0,0,0,1)';
-      pctx.beginPath();
-      pctx.arc(p.x, p.y, eraserSize / 2, 0, Math.PI * 2);
-      pctx.fill();
-      pctx.globalCompositeOperation = 'source-over';
+      g.globalCompositeOperation = 'destination-out';
+      g.fillStyle = 'rgba(0,0,0,1)';
+      g.beginPath(); g.arc(strokePoints[0].x, strokePoints[0].y, eraserSize/2, 0, Math.PI*2); g.fill();
+      g.globalCompositeOperation = 'source-over';
     } else {
-      currentPath = [p];
-      pctx.strokeStyle = color;
-      pctx.lineWidth = penSize * p.pressure * 2;
-      pctx.lineCap = 'round'; pctx.lineJoin = 'round';
-      pctx.beginPath(); pctx.moveTo(p.x, p.y);
+      // Draw a dot at start (for tap)
+      const w = inkWidth(strokePoints[0].p);
+      g.fillStyle = color;
+      g.beginPath(); g.arc(strokePoints[0].x, strokePoints[0].y, w/2, 0, Math.PI*2); g.fill();
     }
   });
 
-  pcv.addEventListener('pointermove', (e) => {
+  cv.addEventListener('pointermove', (e) => {
     if (!drawing) return;
     const p = getPos(e);
-    pressHint.textContent = p.pressure.toFixed(2);
+    pressHint.textContent = p.p.toFixed(2);
+    strokePoints.push(p);
+
     if (tool === 'eraser') {
-      pctx.globalCompositeOperation = 'destination-out';
-      pctx.beginPath();
-      pctx.arc(p.x, p.y, eraserSize / 2, 0, Math.PI * 2);
-      pctx.fill();
-      pctx.globalCompositeOperation = 'source-over';
-    } else {
-      currentPath.push(p);
-      if (currentPath.length > 3) {
-        const b = currentPath[currentPath.length - 2];
-        const c2 = currentPath[currentPath.length - 1];
-        const end = { x: (b.x + c2.x) / 2, y: (b.y + c2.y) / 2 };
-        pctx.strokeStyle = color;
-        pctx.lineWidth = penSize * b.pressure * 2;
-        pctx.quadraticCurveTo(b.x, b.y, end.x, end.y);
-        pctx.stroke();
-        pctx.beginPath(); pctx.moveTo(end.x, end.y);
-      } else {
-        pctx.lineTo(p.x, p.y);
-        pctx.lineWidth = penSize * p.pressure * 2;
-        pctx.stroke();
-      }
+      g.globalCompositeOperation = 'destination-out';
+      g.beginPath();
+      g.arc(p.x, p.y, eraserSize/2, 0, Math.PI*2); g.fill();
+      g.globalCompositeOperation = 'source-over';
     }
   });
 
-  pcv.addEventListener('pointerup', () => {
+  cv.addEventListener('pointerup', () => {
     if (!drawing) return;
-    drawing = false; currentPath = [];
-    if (tool !== 'eraser') pctx.closePath();
+    if (tool === 'pen' && strokePoints.length >= 2) {
+      drawInkStroke(strokePoints, g);
+    }
+    drawing = false; strokePoints = [];
   });
-  pcv.addEventListener('pointerleave', () => { drawing = false; currentPath = []; });
+  cv.addEventListener('pointerleave', () => { drawing = false; strokePoints = []; });
 }
+
+bindCanvasEvents(canvas, wrap, document.getElementById('pressure-hint'), ctx);
 
 // ---- drawing ops ----
 function snapshot() {
@@ -304,15 +320,12 @@ function snapshot() {
   if (undoStack.length >= MAX_UNDO) undoStack.shift();
   undoStack.push(c.getImageData(0, 0, cv.width, cv.height));
 }
-
 function undoSnapshot() {
   if (undoStack.length === 0) return;
   const cv = getActiveCanvas();
   const c = cv.getContext('2d');
-  const img = undoStack.pop();
-  c.putImageData(img, 0, 0);
+  c.putImageData(undoStack.pop(), 0, 0);
 }
-
 function clearAll() {
   snapshot();
   const cv = getActiveCanvas();
@@ -320,80 +333,23 @@ function clearAll() {
   c.clearRect(0, 0, cv.width, cv.height);
 }
 
-// ---- embedded canvas events ----
-function getPos(e) {
-  const r = canvas.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top, pressure: e.pressure || 0.5 };
-}
-
-canvas.addEventListener('pointerdown', (e) => {
-  drawing = true;
-  const p = getPos(e);
-  document.getElementById('pressure-hint').textContent = p.pressure.toFixed(2);
-  snapshot();
-  if (tool === 'eraser') {
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.fillStyle = 'rgba(0,0,0,1)';
-    ctx.beginPath(); ctx.arc(p.x, p.y, eraserSize / 2, 0, Math.PI * 2); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-  } else {
-    currentPath = [p];
-    ctx.strokeStyle = color; ctx.lineWidth = penSize * p.pressure * 2;
-    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    ctx.beginPath(); ctx.moveTo(p.x, p.y);
-  }
-});
-
-canvas.addEventListener('pointermove', (e) => {
-  if (!drawing) return;
-  const p = getPos(e);
-  document.getElementById('pressure-hint').textContent = p.pressure.toFixed(2);
-  if (tool === 'eraser') {
-    ctx.globalCompositeOperation = 'destination-out';
-    ctx.beginPath(); ctx.arc(p.x, p.y, eraserSize / 2, 0, Math.PI * 2); ctx.fill();
-    ctx.globalCompositeOperation = 'source-over';
-  } else {
-    currentPath.push(p);
-    if (currentPath.length > 3) {
-      const b = currentPath[currentPath.length - 2];
-      const c2 = currentPath[currentPath.length - 1];
-      const end = { x: (b.x + c2.x) / 2, y: (b.y + c2.y) / 2 };
-      ctx.strokeStyle = color; ctx.lineWidth = penSize * b.pressure * 2;
-      ctx.quadraticCurveTo(b.x, b.y, end.x, end.y);
-      ctx.stroke(); ctx.beginPath(); ctx.moveTo(end.x, end.y);
-    } else {
-      ctx.lineTo(p.x, p.y);
-      ctx.lineWidth = penSize * p.pressure * 2;
-      ctx.stroke();
-    }
-  }
-});
-
-canvas.addEventListener('pointerup', () => {
-  if (!drawing) return;
-  drawing = false; currentPath = [];
-  if (tool !== 'eraser') ctx.closePath();
-});
-canvas.addEventListener('pointerleave', () => { drawing = false; currentPath = []; });
-
 // ---- toolbar ----
 const sizeInput = document.getElementById('size');
 const sizeVal = document.getElementById('size-val');
-
 function updateSizeUI() {
   if (tool === 'eraser') { sizeInput.value = eraserSize; sizeVal.textContent = eraserSize; }
   else { sizeInput.value = penSize; sizeVal.textContent = penSize; }
 }
 
 document.getElementById('btn-pen').addEventListener('click', function() {
-  tool = 'pen'; this.classList.add('active');
+  tool='pen'; this.classList.add('active');
   document.getElementById('btn-eraser').classList.remove('active');
-  canvas.style.cursor = 'crosshair'; updateSizeUI();
+  canvas.style.cursor='crosshair'; updateSizeUI();
 });
 document.getElementById('btn-eraser').addEventListener('click', function() {
-  tool = 'eraser'; this.classList.add('active');
+  tool='eraser'; this.classList.add('active');
   document.getElementById('btn-pen').classList.remove('active');
-  canvas.style.cursor = 'cell'; updateSizeUI();
+  canvas.style.cursor='cell'; updateSizeUI();
 });
 document.getElementById('color').addEventListener('input', (e) => color = e.target.value);
 sizeInput.addEventListener('input', (e) => {
@@ -404,15 +360,13 @@ sizeInput.addEventListener('input', (e) => {
 document.getElementById('btn-undo').addEventListener('click', undoSnapshot);
 document.getElementById('btn-clear').addEventListener('click', clearAll);
 document.getElementById('btn-save').addEventListener('click', () => {
-  const link = document.createElement('a');
-  link.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
+  const l = document.createElement('a');
+  l.download = 'drawing-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.png';
+  l.href = canvas.toDataURL('image/png'); l.click();
 });
 
 document.getElementById('btn-fullscreen').addEventListener('click', () => {
-  if (parentOverlay) exitFullscreen();
-  else enterFullscreen();
+  if (parentOverlay) exitFullscreen(); else enterFullscreen();
 });
 
 document.addEventListener('keydown', (e) => {
